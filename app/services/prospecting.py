@@ -88,12 +88,26 @@ def run_search_job(job_id: int) -> None:
     try:
         jobs.start(db, job)
         p = job.params
-        country = to_iso(p.get("country")) if p.get("country") else None
-        sp = SearchParams(query=p.get("query", ""), location=p.get("location", ""), country=country,
-                          limit=p["limit"], filters=p.get("filters") or {})
-        providers, skipped = resolve(p["sources"], country)
+        queries = p.get("queries") or ([p["query"]] if p.get("query") else [""])
+        raw_countries = p.get("countries") or ([p["country"]] if p.get("country") else [])
+        countries = [to_iso(c) or c for c in raw_countries] or [None]
 
-        def run(prov):
+        tasks: list[tuple] = []
+        excluded = set(p.get("exclude_sources") or [])
+        skipped: dict[str, str] = {}
+        for country in countries:
+            providers, sk = resolve(p["sources"], country)
+            for name in excluded:
+                sk.pop(name, None)
+            providers = [x for x in providers if x.name not in excluded]
+            skipped.update({f"{k} [{country or '-'}]": v for k, v in sk.items()})
+            for prov in providers:
+                for q in queries:
+                    tasks.append((prov, SearchParams(query=q, location=p.get("location", ""), country=country,
+                                                     limit=p["limit"], filters=p.get("filters") or {})))
+
+        def run(task):
+            prov, sp = task
             try:
                 items = prov.search(sp)
                 for it in items:
@@ -106,8 +120,8 @@ def run_search_job(job_id: int) -> None:
         per_source: dict[str, int] = {}
         errors: dict[str, str] = {}
         with ThreadPoolExecutor(max_workers=max(1, settings.PROVIDER_WORKERS)) as ex:
-            for name, items, err in ex.map(run, providers):
-                per_source[name] = len(items)
+            for name, items, err in ex.map(run, tasks):
+                per_source[name] = per_source.get(name, 0) + len(items)
                 if err:
                     errors[name] = err
                 raw += items
@@ -136,7 +150,7 @@ def run_search_job(job_id: int) -> None:
             new_ids += enrich_companies(db, list(companies.values()), p["enrich_websites"],
                                         p["discover_emails"], p.get("use_smtp"), bl, stats)
 
-        result = {"sources_used": [x.name for x in providers], "sources_skipped": skipped,
+        result = {"sources_used": sorted({t[0].name for t in tasks}), "sources_skipped": skipped,
                   "results_per_source": per_source, "source_errors": errors,
                   "raw_results": len(raw), **stats}
         if p["verify"] and new_ids:

@@ -79,6 +79,6 @@ export const api = {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    return name;
+    return { name, id: res.headers.get("x-export-id") || "", count: Number(res.headers.get("x-export-count") || 0) };
   },
 };

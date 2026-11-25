@@ -30,7 +30,7 @@ export default function Jobs() {
                       <div className="truncate text-sm font-medium">{KIND_LABEL[j.kind] || j.kind} <span className="text-muted">#{j.id}</span></div>
                       <div className="truncate text-xs text-muted">
                         {fmtDate(j.created_at)}
-                        {j.kind === "search" && ` · ${[j.params?.query, j.params?.location, j.params?.country].filter(Boolean).join(" · ")}`}
+                        {j.kind === "search" && ` · ${[(j.params?.queries?.length ? j.params.queries : [j.params?.query]).filter(Boolean).join(", "), j.params?.location, (j.params?.countries?.length ? j.params.countries : [j.params?.country]).filter(Boolean).join(", ")].filter(Boolean).join(" · ")}`}
                         {j.kind === "verify_file" && ` · ${j.params?.filename || ""}`}
                       </div>
                     </div>

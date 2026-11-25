@@ -1,8 +1,7 @@
 import importlib
 import pkgutil
 
-from app.base import Provider, SearchParams  # noqa: F401
-
+from app.services.providers.base import Provider, SearchParams  # noqa: F401
 _registry: dict[str, Provider] = {}
 
 

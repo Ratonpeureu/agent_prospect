@@ -1,5 +1,4 @@
-from app.normalize import strip_accents
-
+from app.services.normalize import strip_accents
 PRESETS: dict[str, dict] = {
     "company": {"label": "Entreprises / sièges",
                 "aliases": ["entreprise", "entreprises", "societe", "siege", "bureau", "bureaux", "company", "headquarters"],

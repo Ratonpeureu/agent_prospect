@@ -13,6 +13,10 @@ from app.services.dedup import upsert_company, upsert_contact
 from app.services.email_verifier import verify_many
 from app.services.exporter import df_to_xlsx_bytes
 from app.services.normalize import EMAIL_RE, FREE_DOMAINS, extract_domain, guess_name_from_email
+from sqlalchemy import select
+
+from app.models import Contact
+from app.services.files import fmt_of, link_items, save_file
 
 ALIASES = {
     "email": ["email", "e-mail", "mail", "adresse email", "adresse mail", "courriel", "email address", "emails"],
@@ -160,11 +164,28 @@ def run_file_job(job_id: int, content: bytes, filename: str, save_to_db: bool,
         rows = parse_rows(content, filename)
         done, excluded, summary = process_rows(db, rows, use_smtp, save_to_db)
         data = build_workbook(done, excluded, summary, include_risky)
-        path = os.path.join(settings.DATA_DIR, "exports", f"verified_job_{job_id}.xlsx")
-        with open(path, "wb") as f:
-            f.write(data)
-        jobs.finish(db, job, summary, path)
+
+        # Fichier source conservé + Excel résultat conservé
+        src = save_file(db, "import", filename, content, fmt_of(filename), summary["uniques"], job_id=job_id,
+                        note="Fichier source" + (" (contacts enregistrés en base)" if save_to_db else ""))
+        out_file = save_file(db, "verified", f"verifie_{os.path.splitext(filename)[0]}.xlsx", data, "xlsx",
+                             len(done) + len(excluded), job_id=job_id, note=f"Résultat de {filename}")
+        if save_to_db and done:
+            emails = [r["email"] for r in done]
+            ids: list[int] = []
+            for i in range(0, len(emails), 1000):
+                ids += db.execute(select(Contact.id).where(Contact.email.in_(emails[i:i + 1000]))).scalars().all()
+            link_items(db, src, "contact", ids, "import")
+        db.commit()
+        jobs.finish(db, job, summary, out_file.path)
     except Exception as e:  # noqa: BLE001
         jobs.fail(db, job, repr(e))
     finally:
         db.close()
+
+
+
+
+
+
+

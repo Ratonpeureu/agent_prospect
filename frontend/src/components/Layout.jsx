@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { Ban, Building2, LayoutDashboard, ListChecks, LogOut, MailCheck, Menu, Moon, Radar, Settings, Sun, Users, X } from "lucide-react";
+import { Ban, Building2, LayoutDashboard, ListChecks, LogOut,FolderOpen, MailCheck, Menu, Moon, Radar, Settings, Sun, Users, X } from "lucide-react";
 import { api, getKey, setKey } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { applyTheme } from "../lib/theme";
@@ -14,7 +14,9 @@ const NAV = [
   { to: "/verify", label: "Vérification", icon: MailCheck },
   { to: "/blacklist", label: "Blacklist", icon: Ban },
   { to: "/jobs", label: "Tâches", icon: ListChecks },
+  { to: "/files", label: "Fichiers", icon: FolderOpen },
   { to: "/settings", label: "Configuration", icon: Settings },
+
 ];
 
 export default function Layout() {

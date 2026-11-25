@@ -11,7 +11,7 @@ from app.services.blacklist import load_blacklist
 from app.services.dedup import upsert_contact
 from app.services.queries import contacts_stmt
 from app.services.verification import run_verify_pending_job, verify_contacts
-
+from app.services.files import export_info
 router = APIRouter(prefix="/api/contacts", tags=["Contacts"])
 
 
@@ -20,26 +20,32 @@ class BatchIn(BaseModel):
     use_smtp: bool | None = None
 
 
-def out(c: Contact, co: Company | None) -> ContactOut:
+def out(c: Contact, co: Company | None, ex: tuple | None = None) -> ContactOut:
     return ContactOut(
         id=c.id, email=c.email, first_name=c.first_name, last_name=c.last_name, full_name=c.full_name,
         job_title=c.job_title, phone=c.phone, company_id=c.company_id, company_name=co.name if co else None,
         source=c.source, email_status=c.email_status, email_reason=c.email_reason,
-        email_score=c.email_score, is_role=c.is_role, verified_at=c.verified_at, created_at=c.created_at)
-
+        email_score=c.email_score, is_role=c.is_role, verified_at=c.verified_at, created_at=c.created_at,
+        exports_count=ex[0] if ex else 0, last_exported_at=ex[1] if ex else None)
 
 @router.get("", response_model=list[ContactOut])
 def list_contacts(response: Response, q: str | None = None, status: str | None = None,
                   country: str | None = None, city: str | None = None, sector: str | None = None,
-                  source: str | None = None, company_id: int | None = None, has_phone: bool | None = None,
+                  source: str | None = None, exclude_source: str | None = None,
+                  company_id: int | None = None, has_phone: bool | None = None,
                   has_website: bool | None = None, job_title: str | None = None, domain: str | None = None,
+                  exported: str | None = None, file_id: int | None = None,
                   limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
-    stmt = contacts_stmt(q, status, country, city, sector, source, company_id,
-                         has_phone, has_website, job_title, domain)
+    stmt = contacts_stmt(q=q, status=status, country=country, city=city, sector=sector, source=source,
+                         company_id=company_id, has_phone=has_phone, has_website=has_website,
+                         job_title=job_title, domain=domain, exclude_source=exclude_source,
+                         exported=exported, file_id=file_id)
     total = db.execute(stmt.with_only_columns(func.count(Contact.id), maintain_column_froms=True)
                        .order_by(None)).scalar_one()
     response.headers["X-Total-Count"] = str(total)
-    return [out(c, co) for c, co in db.execute(stmt.limit(limit).offset(offset)).all()]
+    rows = db.execute(stmt.limit(limit).offset(offset)).all()
+    info = export_info(db, "contact", [c.id for c, _ in rows])
+    return [out(c, co, info.get(c.id)) for c, co in rows]
 
 
 @router.post("", response_model=ContactOut, status_code=201)

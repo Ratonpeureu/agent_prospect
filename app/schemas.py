@@ -32,6 +32,8 @@ class CompanyOut(BaseModel):
     extra: dict | None
     notes: str | None
     contacts_count: int = 0
+    exports_count: int = 0
+    last_exported_at: datetime | None = None
     created_at: datetime
 
 
@@ -70,6 +72,8 @@ class ContactOut(BaseModel):
     is_role: bool
     verified_at: datetime | None
     created_at: datetime
+    exports_count: int = 0
+    last_exported_at: datetime | None = None
 
 
 class BlacklistIn(BaseModel):
@@ -88,19 +92,42 @@ class BlacklistOut(BaseModel):
 
 
 class SearchRequest(BaseModel):
-    query: str = Field("", description="Mot-clé ou secteur : 'informatique', 'comptabilité', 'banque'... (voir GET /api/presets)")
-    location: str = Field("", description="Ville, code postal ou département selon la source")
-    country: str | None = Field(None, description="Pays : 'SN', 'Sénégal', 'France'...")
-    sources: list[str] = Field(["auto"], description="'auto' = toutes les sources adaptées au pays ; sinon noms (GET /api/sources)")
-    limit: int = Field(50, ge=1, le=500, description="Limite PAR source")
-    filters: dict[str, Any] = Field({}, description="Filtres dynamiques propres aux sources (naf, effectif, osm_tags...)")
-    enrich_websites: bool = True    # lit les pages contact des sites (httpx simple)
-    discover_emails: bool = True    # génère contact@, prenom.nom@... et ne garde que les valides (SMTP)
-    verify: bool = True             # vérifie les emails trouvés
+    query: str = ""
+    queries: list[str] = Field([], description="Plusieurs mots-clés / secteurs")
+    location: str = Field("", description="Ville, code postal ou département (appliqué à tous les pays)")
+    country: str | None = None
+    countries: list[str] = Field([], description="Plusieurs pays : 'SN', 'Côte d'Ivoire'...")
+    sources: list[str] = Field(["auto"])
+    exclude_sources: list[str] = Field([], description="Sources à ignorer, même en mode 'auto'")
+    limit: int = Field(50, ge=1, le=500, description="Limite PAR source et PAR combinaison")
+    filters: dict[str, Any] = {}
+    enrich_websites: bool = True
+    discover_emails: bool = True
+    verify: bool = True
     use_smtp: bool | None = None
 
     @model_validator(mode="after")
-    def _need_something(self):
-        if not (self.query or self.location or self.country or self.filters):
-            raise ValueError("Précise au moins query, location, country ou filters")
+    def _normalize(self):
+        if self.query and self.query not in self.queries:
+            self.queries = [self.query, *self.queries]
+        if self.country and self.country not in self.countries:
+            self.countries = [self.country, *self.countries]
+        self.queries = list(dict.fromkeys(q.strip() for q in self.queries if q.strip()))
+        self.countries = list(dict.fromkeys(self.countries))
+        if not (self.queries or self.location or self.countries or self.filters):
+            raise ValueError("Précise au moins un mot-clé, une zone, un pays ou des filtres")
+        if max(1, len(self.queries)) * max(1, len(self.countries)) > 60:
+            raise ValueError("Trop de combinaisons (mots-clés × pays > 60) : réduis la sélection")
         return self
+
+
+
+class VerifyTextIn(BaseModel):
+    text: str = ""
+    emails: list[str] = []
+    use_smtp: bool | None = None
+    save_to_db: bool = False
+
+
+
+

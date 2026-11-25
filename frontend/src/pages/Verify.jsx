@@ -192,6 +192,7 @@ function FileTab() {
             jobId={jobId}
             actions={(job) => job.status === "done" && (
               <>
+                <Link to="/files" className="btn btn-ghost btn-sm">Voir dans Fichiers</Link>
                 <button className="btn btn-primary btn-sm" onClick={() => api.download(`/api/jobs/${jobId}/download`).catch((e) => toast.error(e.message))}><Download size={14} /> Télécharger l'Excel propre</button>
                 {save && <Link to="/contacts" className="btn btn-ghost btn-sm">Voir les contacts</Link>}
               </>

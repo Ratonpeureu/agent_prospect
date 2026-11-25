@@ -6,7 +6,7 @@ from app.schemas import VerifyTextIn
 from app.services import jobs
 from app.services.file_import import build_workbook, process_rows, run_file_job
 from app.services.normalize import EMAIL_RE
-
+from app.services.files import save_file
 router = APIRouter(prefix="/api/verify", tags=["Vérification d'emails"])
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 MAX_TEXT = 500
@@ -27,8 +27,15 @@ def verify_text(body: VerifyTextIn, format: str = "json", include_risky: bool = 
     done, excluded, summary = process_rows(db, rows, body.use_smtp, body.save_to_db)
     if format == "xlsx":
         data = build_workbook(done, excluded, summary, include_risky)
+        n = len(done) + len(excluded)
+        pasted = "\n".join(sorted({r["email"] for r in rows}))
+        save_file(db, "import", "liste_collee.txt", pasted.encode("utf-8"), "txt", len(set(r["email"] for r in rows)),
+                  note="Texte collé dans Vérification")
+        rec = save_file(db, "verified", "emails_verifies.xlsx", data, "xlsx", n, note="Résultat de la liste collée")
+        db.commit()
         return Response(data, media_type=XLSX,
-                        headers={"Content-Disposition": 'attachment; filename="emails_verifies.xlsx"'})
+                        headers={"Content-Disposition": 'attachment; filename="emails_verifies.xlsx"',
+                                 "X-Export-Id": str(rec.id), "X-Export-Count": str(n)})
     return {"summary": summary, "results": done + excluded}
 
 

@@ -7,32 +7,39 @@ from app.models import Company
 from app.schemas import CompanyIn, CompanyOut
 from app.services.dedup import upsert_company
 from app.services.normalize import ensure_url, extract_domain
-from app.services.queries import companies_stmt
+from app.services.queries import apply_company_sources, companies_stmt
+from app.services.files import export_info
 
 router = APIRouter(prefix="/api/companies", tags=["Entreprises"])
 
 
-def _out(c: Company, n: int) -> CompanyOut:
+def _out(c: Company, n: int, ex: tuple | None = None) -> CompanyOut:
     o = CompanyOut.model_validate(c)
     o.contacts_count = n
+    if ex:
+        o.exports_count, o.last_exported_at = ex
     return o
 
 
 @router.get("", response_model=list[CompanyOut])
 def list_companies(response: Response, q: str | None = None, country: str | None = None,
                    city: str | None = None, sector: str | None = None, source: str | None = None,
-                   has_website: bool | None = None, has_contacts: bool | None = None,
-                   limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
-    stmt, src = companies_stmt(q, country, city, sector, source, has_website, has_contacts)
-    if src:
-        rows = [r for r in db.execute(stmt).all() if src in (r[0].sources or [])]
+                   exclude_source: str | None = None, has_website: bool | None = None,
+                   has_contacts: bool | None = None, exported: str | None = None,
+                   file_id: int | None = None, limit: int = 50, offset: int = 0,
+                   db: Session = Depends(get_db)):
+    stmt, flt = companies_stmt(q, country, city, sector, source, has_website, has_contacts,
+                               exclude_source, exported, file_id)
+    if flt:
+        rows = apply_company_sources(db.execute(stmt).all(), flt)
         response.headers["X-Total-Count"] = str(len(rows))
         rows = rows[offset:offset + limit]
     else:
         total = db.execute(select(func.count()).select_from(stmt.order_by(None).subquery())).scalar_one()
         response.headers["X-Total-Count"] = str(total)
         rows = db.execute(stmt.limit(limit).offset(offset)).all()
-    return [_out(c, n) for c, n in rows]
+    info = export_info(db, "company", [r[0].id for r in rows])
+    return [_out(c, n, info.get(c.id)) for c, n in rows]
 
 
 @router.post("", response_model=CompanyOut, status_code=201)

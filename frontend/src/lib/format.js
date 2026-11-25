@@ -61,3 +61,22 @@ export const KIND_LABEL = {
   verify_file: "Vérification de fichier",
   verify_pending: "Vérification des contacts",
 };
+
+
+
+
+
+
+export const FILE_CATEGORY = {
+  export_contacts: { label: "Export contacts", tone: "brand" },
+  export_companies: { label: "Export entreprises", tone: "info" },
+  import: { label: "Import", tone: "warn" },
+  verified: { label: "Résultat de vérification", tone: "ok" },
+};
+
+export const fmtSize = (b) =>
+  (b || 0) > 1048576 ? `${(b / 1048576).toFixed(1)} Mo` : `${Math.max(1, Math.round((b || 0) / 1024))} Ko`;
+
+
+
+

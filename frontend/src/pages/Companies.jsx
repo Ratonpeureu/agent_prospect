@@ -7,10 +7,16 @@ import { COUNTRIES, countryName } from "../lib/countries";
 import { fmtDate } from "../lib/format";
 import { Badge, Empty, Field, Modal, PageHeader, Pagination, Spinner, StatusBadge } from "../components/ui";
 import JobCard from "../components/JobCard";
+import SourceFilter from "../components/SourceFilter";
 import { useToast } from "../components/Toast";
 
 const PAGE = 50;
 const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== "" && v != null));
+
+const EMPTY_FILTERS = {
+  q: "", country: "", city: "", sector: "", source: "", exclude_source: "",
+  has_website: "", has_contacts: "", exported: "", file_id: "",
+};
 
 const EXTRA_LABELS = {
   naf: "Code NAF", legal_form: "Forme juridique", employees: "Effectif", category: "Catégorie",
@@ -24,8 +30,11 @@ export default function Companies() {
   const toast = useToast();
   const [f, setF] = useState({
     q: sp.get("q") || "", country: sp.get("country") || "", city: "", sector: "",
-    source: sp.get("source") || "", has_website: "", has_contacts: "",
+    source: sp.get("source") || "", exclude_source: sp.get("exclude_source") || "",
+    has_website: "", has_contacts: "", exported: "", file_id: sp.get("file_id") || "",
   });
+  const [mark, setMark] = useState(true);
+  const [cnt, setCnt] = useState("");
   const [page, setPage] = useState(0);
   const [openId, setOpenId] = useState(null);
   const [adding, setAdding] = useState(false);
@@ -34,10 +43,17 @@ export default function Companies() {
   const list = useAsync(() => api.list("/api/companies", { ...clean(d), limit: PAGE, offset: page * PAGE }), [JSON.stringify(d), page]);
 
   const upd = (k, v) => { setF((x) => ({ ...x, [k]: v })); setPage(0); };
+  const setSrc = (inc, exc) => { setF((x) => ({ ...x, source: inc, exclude_source: exc })); setPage(0); };
   const items = list.data?.items || [];
-  const sourceNames = [...(sources.data || []).map((s) => s.name), "manual", "import"];
+  const sourceNames = [...new Set([...(sources.data || []).map((s) => s.name), "manual", "import"])];
 
-  const exportIt = (format) => api.download("/api/export/companies", { ...clean(f), format }).catch((e) => toast.error(e.message));
+  const exportIt = (format) =>
+    api.download("/api/export/companies", { ...clean(f), format, limit: Number(cnt) || undefined, record: mark ? undefined : "false" })
+      .then((r) => {
+        toast.success(`${r.count} entreprise(s) exportée(s)` + (r.id ? ` · fichier #${r.id} (page Fichiers)` : " · non marquées"));
+        if (r.id) list.reload();
+      })
+      .catch((e) => toast.error(e.message));
 
   return (
     <>
@@ -61,29 +77,44 @@ export default function Companies() {
         </select>
         <input className="input" placeholder="Ville" value={f.city} onChange={(e) => upd("city", e.target.value)} />
         <input className="input" placeholder="Secteur" value={f.sector} onChange={(e) => upd("sector", e.target.value)} />
-        <select className="input" value={f.source} onChange={(e) => upd("source", e.target.value)}>
-          <option value="">Toutes les sources</option>
-          {sourceNames.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
         <select className="input" value={f.has_website} onChange={(e) => upd("has_website", e.target.value)}>
           <option value="">Site web : indifférent</option><option value="true">Avec site web</option>
         </select>
         <select className="input" value={f.has_contacts} onChange={(e) => upd("has_contacts", e.target.value)}>
           <option value="">Contacts : indifférent</option><option value="true">Avec contacts</option><option value="false">Sans contact</option>
         </select>
-        <button className="btn btn-ghost" onClick={() => { setF({ q: "", country: "", city: "", sector: "", source: "", has_website: "", has_contacts: "" }); setPage(0); }}>Réinitialiser</button>
+        <select className="input" value={f.exported} onChange={(e) => upd("exported", e.target.value)}>
+          <option value="">Export : indifférent</option><option value="no">Pas encore exportées</option><option value="yes">Déjà exportées</option>
+        </select>
+        <input type="number" min="1" className="input" placeholder="Nombre max à exporter" value={cnt} onChange={(e) => setCnt(e.target.value)} />
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" className="accent-brand" checked={mark} onChange={(e) => setMark(e.target.checked)} /> Marquer comme exportée
+        </label>
+        <button className="btn btn-ghost" onClick={() => { setF(EMPTY_FILTERS); setCnt(""); setPage(0); }}>Réinitialiser</button>
+        <div className="sm:col-span-2 lg:col-span-4">
+          <SourceFilter sources={sourceNames} include={f.source} exclude={f.exclude_source} onChange={setSrc} />
+        </div>
       </div>
+
+      {f.file_id && (
+        <div className="mb-3">
+          <Badge tone="brand">Lignes du fichier #{f.file_id} <button className="ml-1" onClick={() => upd("file_id", "")}>✕</button></Badge>
+        </div>
+      )}
 
       <div className="card overflow-hidden">
         {list.loading && !items.length ? (
           <div className="grid h-40 place-items-center text-muted"><Spinner size={22} /></div>
         ) : !items.length ? (
-          <Empty icon={Building2} title="Aucune entreprise" text="Lance une recherche de prospection ou ajoute une entreprise manuellement." />
+          <Empty icon={Building2} title="Aucune entreprise" text="Aucun résultat pour ces filtres, ou lance une recherche de prospection." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-soft/60">
-                <tr><th className="th">Entreprise</th><th className="th">Secteur</th><th className="th">Localisation</th><th className="th">Site / Tél.</th><th className="th">Contacts</th><th className="th">Sources</th></tr>
+                <tr>
+                  <th className="th">Entreprise</th><th className="th">Secteur</th><th className="th">Localisation</th>
+                  <th className="th">Site / Tél.</th><th className="th">Contacts</th><th className="th">Sources</th><th className="th">Export</th>
+                </tr>
               </thead>
               <tbody>
                 {items.map((c) => (
@@ -97,6 +128,11 @@ export default function Companies() {
                     </td>
                     <td className="px-3 py-2.5"><Badge tone={c.contacts_count ? "ok" : "muted"}>{c.contacts_count}</Badge></td>
                     <td className="px-3 py-2.5"><div className="flex flex-wrap gap-1">{(c.sources || []).map((s) => <Badge key={s}>{s}</Badge>)}</div></td>
+                    <td className="px-3 py-2.5">
+                      {c.exports_count > 0
+                        ? <Badge tone="ok" title={`Dernier export : ${fmtDate(c.last_exported_at)}`}>Exportée{c.exports_count > 1 ? ` ×${c.exports_count}` : ""}</Badge>
+                        : <span className="text-xs text-muted">—</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>

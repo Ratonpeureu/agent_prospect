@@ -5,7 +5,8 @@ from sqlalchemy import (JSON, Boolean, DateTime, ForeignKey, Integer, String,
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-
+from sqlalchemy import (JSON, Boolean, DateTime, ForeignKey, Index, Integer, String,
+                        Text, UniqueConstraint, func)
 
 class Company(Base):
     __tablename__ = "companies"
@@ -83,3 +84,44 @@ class Job(Base):
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+
+
+
+class FileRecord(Base):
+    """Fichier conservé : export, import, résultat de vérification."""
+    __tablename__ = "files"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # export_contacts | export_companies | import | verified
+    category: Mapped[str] = mapped_column(String(30), index=True)
+    format: Mapped[str] = mapped_column(String(10))  # xlsx | csv | txt
+    filename: Mapped[str] = mapped_column(String(300), index=True)
+    path: Mapped[str | None] = mapped_column(String(600))
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    filters: Mapped[dict | None] = mapped_column(JSON, default=dict)
+    note: Mapped[str | None] = mapped_column(String(300))
+    job_id: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class FileItem(Base):
+    """Lien fichier <-> ligne (contact ou entreprise) : sert à savoir ce qui a déjà été exporté."""
+    __tablename__ = "file_items"
+    __table_args__ = (Index("ix_file_items_entity", "entity_type", "entity_id", "role"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_id: Mapped[int] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"), index=True)
+    entity_type: Mapped[str] = mapped_column(String(10))  # contact | company
+    entity_id: Mapped[int] = mapped_column(Integer)
+    role: Mapped[str] = mapped_column(String(10))  # export | import
+
+
+
+
+
+
+
+
