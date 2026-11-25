@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Building2, Download, ExternalLink, Plus, Save, Sparkles, Trash2 } from "lucide-react";
+import { Building2, Download, ExternalLink, Plus, Save, Sparkles, Trash2, Upload } from "lucide-react";
 import { api } from "../lib/api";
 import { useAsync, useDebounce } from "../lib/hooks";
 import { COUNTRIES, countryName } from "../lib/countries";
 import { fmtDate } from "../lib/format";
-import { Badge, Empty, Field, Modal, PageHeader, Pagination, Spinner, StatusBadge } from "../components/ui";
+import { Badge, Empty, Field, Modal, PageHeader, Pagination, Spinner, StatusBadge, Toggle } from "../components/ui";
 import JobCard from "../components/JobCard";
 import SourceFilter from "../components/SourceFilter";
 import { useToast } from "../components/Toast";
@@ -42,10 +42,13 @@ export default function Companies() {
   const sources = useAsync(() => api.get("/api/sources"), []);
   const list = useAsync(() => api.list("/api/companies", { ...clean(d), limit: PAGE, offset: page * PAGE }), [JSON.stringify(d), page]);
 
+  const [importing, setImporting] = useState(false);
+  const compSources = useAsync(() => api.get("/api/companies/sources"), []);
+
   const upd = (k, v) => { setF((x) => ({ ...x, [k]: v })); setPage(0); };
   const setSrc = (inc, exc) => { setF((x) => ({ ...x, source: inc, exclude_source: exc })); setPage(0); };
   const items = list.data?.items || [];
-  const sourceNames = [...new Set([...(sources.data || []).map((s) => s.name), "manual", "import"])];
+  const sourceNames = [...new Set([...(sources.data || []).map((s) => s.name), ...(compSources.data || []), "manual", "import"])];
 
   const exportIt = (format) =>
     api.download("/api/export/companies", { ...clean(f), format, limit: Number(cnt) || undefined, record: mark ? undefined : "false" })
@@ -64,6 +67,7 @@ export default function Companies() {
           <>
             <button className="btn btn-ghost" onClick={() => exportIt("xlsx")}><Download size={16} /> Excel</button>
             <button className="btn btn-ghost" onClick={() => exportIt("csv")}>CSV</button>
+            <button className="btn btn-ghost" onClick={() => setImporting(true)}><Upload size={16} /> Importer</button>
             <button className="btn btn-primary" onClick={() => setAdding(true)}><Plus size={16} /> Ajouter</button>
           </>
         }
@@ -144,6 +148,7 @@ export default function Companies() {
 
       {openId && <CompanyModal id={openId} onClose={() => setOpenId(null)} onChanged={list.reload} />}
       {adding && <AddCompany onClose={() => setAdding(false)} onDone={() => { setAdding(false); list.reload(); }} />}
+      {importing && <ImportCompanies onClose={() => setImporting(false)} onDone={() => { setImporting(false); list.reload(); compSources.reload(); }} />}
     </>
   );
 }
@@ -286,6 +291,69 @@ function AddCompany({ onClose, onDone }) {
         <Field label="Téléphone"><input className="input" value={f.phone} onChange={(e) => set("phone", e.target.value)} /></Field>
         <Field label="Adresse" className="sm:col-span-2"><input className="input" value={f.address} onChange={(e) => set("address", e.target.value)} /></Field>
       </div>
+    </Modal>
+  );
+}
+
+function ImportCompanies({ onClose, onDone }) {
+  const toast = useToast();
+  const ref = useRef(null);
+  const [mode, setMode] = useState("file");
+  const [file, setFile] = useState(null);
+  const [url, setUrl] = useState("");
+  const [source, setSource] = useState("");
+  const [country, setCountry] = useState("");
+  const [enrich, setEnrich] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState(null);
+
+  const submit = async () => {
+    setBusy(true);
+    try {
+      if (mode === "file") {
+        const fd = new FormData();
+        fd.append("file", file); fd.append("source", source || "import"); fd.append("country", country); fd.append("enrich", String(enrich));
+        setRes(await api.upload("/api/companies/import", fd));
+      } else {
+        setRes(await api.post("/api/companies/import-url", { url, source: source || "import", country, enrich }));
+      }
+    } catch (e) { toast.error(e.message); } finally { setBusy(false); }
+  };
+  const ready = mode === "file" ? !!file : url.trim().startsWith("http");
+
+  return (
+    <Modal open onClose={res ? onDone : onClose} title="Importer une liste d'entreprises"
+      footer={res ? <button className="btn btn-primary" onClick={onDone}>Terminer</button>
+        : <><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-primary" onClick={submit} disabled={!ready || busy}>{busy && <Spinner />} Importer</button></>}>
+      {res ? (
+        <div className="space-y-2 text-sm">
+          <p><b>{res.created}</b> entreprise(s) créée(s), <b>{res.merged}</b> fusionnée(s) avec l'existant, sur {res.rows} ligne(s).</p>
+          {res.contacts > 0 && <p><b>{res.contacts}</b> contact(s) créé(s) (à vérifier dans Contacts).</p>}
+          {res.job_id && <p className="text-muted">Enrichissement lancé : tâche #{res.job_id} (recherche des sites, emails, vérification).</p>}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="inline-flex rounded-xl bg-soft p-1">
+            {[["file", "Fichier"], ["url", "Lien web"]].map(([k, l]) => (
+              <button key={k} onClick={() => setMode(k)} className={`rounded-lg px-4 py-1.5 text-sm font-medium ${mode === k ? "bg-surface shadow-card" : "text-muted"}`}>{l}</button>
+            ))}
+          </div>
+          {mode === "file" ? (
+            <div onClick={() => ref.current?.click()} className="grid cursor-pointer place-items-center rounded-2xl border-2 border-dashed border-line p-8 text-center hover:bg-soft">
+              <input ref={ref} type="file" accept=".csv,.txt,.xlsx,.xlsm,.pdf,.html,.htm" className="hidden" onChange={(e) => setFile(e.target.files[0] || null)} />
+              <Upload className="mb-2 text-brand" size={26} />
+              {file ? <div className="font-medium">{file.name}</div> : <div className="text-sm text-muted">CSV, Excel, PDF ou page HTML (liste d'exposants, annuaire, attributaires…)</div>}
+            </div>
+          ) : (
+            <Field label="Adresse de la page, du PDF ou du fichier"><input className="input" placeholder="https://…" value={url} onChange={(e) => setUrl(e.target.value)} /></Field>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Nom de la source" hint="Ex. gitex_africa, cciad : filtrable ensuite."><input className="input" placeholder="import" value={source} onChange={(e) => setSource(e.target.value)} /></Field>
+            <Field label="Pays par défaut"><select className="input" value={country} onChange={(e) => setCountry(e.target.value)}><option value="">—</option>{COUNTRIES.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></Field>
+          </div>
+          <Toggle checked={enrich} onChange={setEnrich} label="Enrichir après l'import" hint="Cherche le site web, lit les pages contact et vérifie les emails trouvés." />
+        </div>
+      )}
     </Modal>
   );
 }

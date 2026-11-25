@@ -142,8 +142,9 @@ export default function SettingsPage() {
           <div className="flex flex-wrap gap-2">
             <button className="btn btn-ghost" onClick={() => runTest("smtp")} disabled={tests.smtp?.loading}>{tests.smtp?.loading ? <Spinner /> : <Wifi size={16} />} Tester le port 25 (SMTP)</button>
             <button className="btn btn-ghost" onClick={() => runTest("sources")} disabled={tests.sources?.loading}>{tests.sources?.loading ? <Spinner /> : <Wifi size={16} />} Tester les sources de données</button>
+            <button className="btn btn-ghost" onClick={() => runTest("procurement")} disabled={tests.procurement?.loading}>{tests.procurement?.loading ? <Spinner /> : <Wifi size={16} />} Tester les marchés publics</button>
           </div>
-          {["smtp", "sources"].map((n) => tests[n] && !tests[n].loading && (
+          {["smtp", "sources", "procurement"].map((n) => tests[n] && !tests[n].loading && (
             <div key={n} className="mt-4 space-y-2">
               {tests[n].message && <p className={`text-sm ${tests[n].ok ? "text-ok" : "text-warn"}`}>{tests[n].message}</p>}
               <ul className="divide-y divide-line rounded-xl border border-line text-sm">

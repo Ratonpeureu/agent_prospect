@@ -80,7 +80,12 @@ def run_test(name: str):
             ("Wikidata SPARQL", "https://query.wikidata.org/sparql", {"params": {"query": "ASK {}", "format": "json"}}),
             ("GLEIF", "https://api.gleif.org/api/v1/lei-records", {"params": {"page[size]": 1}}),
             ("API Recherche d'entreprises (FR)", "https://recherche-entreprises.api.gouv.fr/search",
+            
              {"params": {"q": "test", "per_page": 1}}),
+            ("Banque mondiale (Socrata)", "https://finances.worldbank.org/resource/kdui-wcs3.json", {"params": {"$limit": 1}}),
+            ("GDELT", "https://api.gdeltproject.org/api/v2/doc/doc",
+             {"params": {"query": "test", "mode": "artlist", "format": "json", "maxrecords": 1}}),
+            ("Common Crawl", "https://index.commoncrawl.org/collinfo.json", {}),
         ]
         with ThreadPoolExecutor(max_workers=5) as ex:
             results = list(ex.map(lambda j: _http_ping(j[0], j[1], **j[2]), jobs))
@@ -111,5 +116,49 @@ def run_test(name: str):
                403: "Accès refusé (403) : abonne ta clé à l'API Sirene dans le portail INSEE."}.get(
             r.status_code, f"Réponse HTTP {r.status_code}")
         return {"ok": r.status_code == 200, "results": [], "message": msg}
+
+    if name == "procurement":
+        res = []
+        t = time.time()
+        try:
+            r = httpx.get("https://finances.worldbank.org/resource/kdui-wcs3.json", params={"$limit": 1}, timeout=25)
+            keys = ", ".join(list(r.json()[0].keys())[:14]) if r.status_code == 200 and r.json() else r.text[:120]
+            res.append({"name": "Banque mondiale (champs réels)", "ok": r.status_code == 200,
+                        "ms": int((time.time() - t) * 1000), "detail": keys})
+        except (httpx.HTTPError, ValueError, IndexError) as e:
+            res.append({"name": "Banque mondiale", "ok": False, "ms": int((time.time() - t) * 1000), "detail": type(e).__name__})
+        t = time.time()
+        try:
+            r = httpx.post("https://api.ted.europa.eu/v3/notices/search",
+                           json={"query": "notice-type=can-standard AND winner-country=FRA", "fields": ["winner-name", "winner-city"],
+                                 "limit": 1, "page": 1, "scope": "ALL", "paginationMode": "PAGE_NUMBER"}, timeout=30)
+            res.append({"name": "TED (champs winner-*)", "ok": r.status_code == 200,
+                        "ms": int((time.time() - t) * 1000), "detail": f"HTTP {r.status_code} {r.text[:140]}"})
+        except httpx.HTTPError as e:
+            res.append({"name": "TED", "ok": False, "ms": int((time.time() - t) * 1000), "detail": type(e).__name__})
+        return {"ok": all(x["ok"] for x in res), "results": res,
+                "message": "Si TED échoue : le détail indique le champ invalide ; corrige F_NAME / F_COUNTRY / F_CITY dans providers/ted.py."}
+
+    if name == "brave":
+        if not settings.BRAVE_API_KEY:
+            return {"ok": False, "results": [], "message": "Aucune clé enregistrée."}
+        try:
+            r = httpx.get("https://api.search.brave.com/res/v1/web/search", params={"q": "test", "count": 1},
+                          headers={"X-Subscription-Token": settings.BRAVE_API_KEY}, timeout=20)
+        except httpx.HTTPError as e:
+            return {"ok": False, "results": [], "message": f"Connexion impossible : {type(e).__name__}"}
+        return {"ok": r.status_code == 200, "results": [],
+                "message": {200: "Clé valide.", 401: "Clé refusée (401).", 422: "Clé refusée (422)."}.get(r.status_code, f"HTTP {r.status_code}")}
+
+    if name == "google_places":
+        if not settings.GOOGLE_PLACES_API_KEY:
+            return {"ok": False, "results": [], "message": "Aucune clé enregistrée."}
+        try:
+            r = httpx.post("https://places.googleapis.com/v1/places:searchText", json={"textQuery": "restaurant Dakar", "pageSize": 1},
+                           headers={"X-Goog-Api-Key": settings.GOOGLE_PLACES_API_KEY, "X-Goog-FieldMask": "places.displayName"}, timeout=20)
+        except httpx.HTTPError as e:
+            return {"ok": False, "results": [], "message": f"Connexion impossible : {type(e).__name__}"}
+        return {"ok": r.status_code == 200, "results": [],
+                "message": "Clé valide." if r.status_code == 200 else f"HTTP {r.status_code} : {r.text[:160]}"}
 
     raise HTTPException(404, "Test inconnu")

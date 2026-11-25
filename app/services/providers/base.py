@@ -10,6 +10,7 @@ class SearchParams:
     location: str = ""
     country: str | None = None
     limit: int = 50
+    auto: bool = True
     filters: dict[str, Any] = field(default_factory=dict)
 
 
@@ -38,7 +39,7 @@ class Provider:
         return {"name": self.name, "label": self.label, "description": self.description,
                 "countries": "mondial" if self.countries is None else sorted(self.countries),
                 "requires_key": self.key_env, "configured": self.configured(),
-                "signup_url": self.signup_url, "filters": self.filters}
+                "signup_url": self.signup_url, "filters": self.filters, "auto": self.auto}
 
     @staticmethod
     def headers() -> dict:

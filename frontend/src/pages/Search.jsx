@@ -1,3 +1,4 @@
+//bon fait en moi un file pdf//modern/avec dezcriptif/simplet de ce qu'il permet pour chaque screenshot//////n'invente rien suppose rien//
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Ban, ChevronDown, Download, History, Radar, Rocket, X } from "lucide-react";
@@ -9,10 +10,11 @@ import { Badge, Field, PageHeader, Spinner, Toggle } from "../components/ui";
 import JobCard, { JobStatus } from "../components/JobCard";
 import { useToast } from "../components/Toast";
 
-const LIST_KEYS = new Set(["osm_tags", "naf", "sic_codes"]);
-const BOOL_KEYS = new Set(["officers", "ess", "siege_only"]);
-const NEEDS_COUNTRY = new Set(["wikidata", "opencorporates"]);
-const MAX_COMBOS = 60;
+const LIST_KEYS = new Set(["osm_tags", "naf", "sic_codes", "signals"]);
+const BOOL_KEYS = new Set(["officers", "ess", "siege_only", "include_institutions"]);
+const NEEDS_COUNTRY = new Set(["wikidata", "opencorporates", "worldbank", "ted", "common_crawl", "gdelt"]);
+
+const MAX_COMBOS = 100;
 
 const GROUPS = {
   "Afrique de l'Ouest": ["SN", "CI", "ML", "BF", "NE", "GN", "TG", "BJ", "MR", "GM"],
@@ -88,7 +90,8 @@ export default function Search() {
   const active = useMemo(
     () => (sources.data || []).filter((p) =>
       !form.exclude_sources.includes(p.name) &&
-      (auto ? supports(p) && p.configured : form.sources.includes(p.name))),
+      (auto ? supports(p) && p.configured && p.auto !== false : form.sources.includes(p.name))),
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [sources.data, form.sources, form.countries, form.exclude_sources]
   );

@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     CRAWL_TIMEOUT: int = 10
     CRAWL_WORKERS: int = 8
     DISCOVERY_MAX_ROLE: int = 5
+    BRAVE_API_KEY: str = ""
+    SITE_FINDER_ENABLED: bool = True
 
     @property
     def USER_AGENT(self) -> str:

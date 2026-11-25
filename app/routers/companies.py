@@ -9,8 +9,27 @@ from app.services.dedup import upsert_company
 from app.services.normalize import ensure_url, extract_domain
 from app.services.queries import apply_company_sources, companies_stmt
 from app.services.files import export_info
+from fastapi import BackgroundTasks, File, Form, UploadFile
+from pydantic import BaseModel
+
+from app.services import jobs
+from app.services.company_import import fetch_url, import_rows, parse_bytes
+from app.services.prospecting import run_enrich_job
+
+
+
 
 router = APIRouter(prefix="/api/companies", tags=["Entreprises"])
+
+
+
+
+class ImportUrlIn(BaseModel):
+    url: str
+    source: str = "import"
+    country: str = ""
+    enrich: bool = False
+
 
 
 def _out(c: Company, n: int, ex: tuple | None = None) -> CompanyOut:
@@ -51,6 +70,53 @@ def create_company(body: CompanyIn, db: Session = Depends(get_db)):
         raise HTTPException(422, str(e))
     db.commit()
     return _out(company, len(company.contacts))
+
+
+
+
+def _finish(db: Session, bg: BackgroundTasks, rows: list[dict], source: str, country: str, enrich: bool) -> dict:
+    if not rows:
+        raise HTTPException(422, "Aucune entreprise détectée : il faut au moins une colonne de nom (nom, entreprise, exposant...)")
+    res = import_rows(db, rows, source.strip() or "import", country.strip())
+    ids = res.pop("company_ids")
+    if enrich and ids:
+        job = jobs.create_job(db, "enrich", {"company_ids": ids, "limit": len(ids), "crawl_websites": True,
+                                              "discover_emails": True, "verify": True, "use_smtp": None})
+        bg.add_task(run_enrich_job, job.id)
+        res["job_id"] = job.id
+    return res
+
+
+@router.get("/sources")
+def company_sources(db: Session = Depends(get_db)):
+    """Toutes les sources présentes en base (pour les filtres)."""
+    return sorted({s for (srcs,) in db.execute(select(Company.sources)) for s in (srcs or [])})
+
+
+@router.post("/import", status_code=201)
+def import_file(bg: BackgroundTasks, file: UploadFile = File(...), source: str = Form("import"),
+                country: str = Form(""), enrich: bool = Form(False), db: Session = Depends(get_db)):
+    """Liste d'entreprises en CSV / Excel / PDF / HTML (exposants, annuaires, attributaires...)."""
+    content = file.file.read()
+    if len(content) > 30 * 1024 * 1024:
+        raise HTTPException(413, "Fichier trop volumineux (max 30 Mo)")
+    try:
+        rows = parse_bytes(content, file.filename or "", file.content_type or "")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(422, f"Fichier illisible : {type(e).__name__}")
+    return _finish(db, bg, rows, source, country, enrich)
+
+
+@router.post("/import-url", status_code=201)
+def import_from_url(body: ImportUrlIn, bg: BackgroundTasks, db: Session = Depends(get_db)):
+    """Même chose depuis une URL : page web avec tableau, PDF, CSV ou Excel en ligne."""
+    try:
+        rows = fetch_url(body.url)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Téléchargement impossible : {type(e).__name__}")
+    return _finish(db, bg, rows, body.source, body.country, body.enrich)
 
 
 @router.get("/{company_id}", response_model=CompanyOut)

@@ -42,3 +42,33 @@ def to_iso(value: str | None) -> str | None:
     if len(v) == 2 and v.isalpha():
         return v.upper()
     return NAMES.get(v)
+
+
+
+EN_NAMES = {"SN": "Senegal", "CI": "Cote d'Ivoire", "ML": "Mali", "BF": "Burkina Faso", "NE": "Niger", "GN": "Guinea",
+            "TG": "Togo", "BJ": "Benin", "MR": "Mauritania", "GM": "Gambia", "GW": "Guinea-Bissau", "CV": "Cabo Verde",
+            "CM": "Cameroon", "GA": "Gabon", "CG": "Congo", "CD": "Congo", "TD": "Chad", "CF": "Central African Republic",
+            "GQ": "Equatorial Guinea", "DJ": "Djibouti", "KM": "Comoros", "MG": "Madagascar", "MU": "Mauritius",
+            "SC": "Seychelles", "RW": "Rwanda", "BI": "Burundi", "MA": "Morocco", "DZ": "Algeria", "TN": "Tunisia",
+            "EG": "Egypt", "LY": "Libya", "NG": "Nigeria", "GH": "Ghana", "LR": "Liberia", "SL": "Sierra Leone",
+            "KE": "Kenya", "UG": "Uganda", "TZ": "Tanzania", "ET": "Ethiopia", "ZA": "South Africa", "AO": "Angola",
+            "MZ": "Mozambique", "ZM": "Zambia", "ZW": "Zimbabwe", "NA": "Namibia", "BW": "Botswana", "FR": "France",
+            "GB": "United Kingdom", "BE": "Belgium", "CH": "Switzerland", "LU": "Luxembourg", "DE": "Germany",
+            "ES": "Spain", "IT": "Italy", "PT": "Portugal", "NL": "Netherlands", "CA": "Canada", "US": "United States"}
+FR_NAMES = {"SN": "Sénégal", "CI": "Côte d'Ivoire", "ML": "Mali", "BF": "Burkina Faso", "NE": "Niger", "GN": "Guinée",
+            "TG": "Togo", "BJ": "Bénin", "MR": "Mauritanie", "GM": "Gambie", "CV": "Cap-Vert", "CM": "Cameroun",
+            "GA": "Gabon", "CG": "Congo-Brazzaville", "CD": "RD Congo", "TD": "Tchad", "MG": "Madagascar",
+            "MU": "Maurice", "MA": "Maroc", "DZ": "Algérie", "TN": "Tunisie", "EG": "Égypte", "FR": "France",
+            "BE": "Belgique", "CH": "Suisse", "LU": "Luxembourg", "DE": "Allemagne", "ES": "Espagne", "IT": "Italie",
+            "PT": "Portugal", "NL": "Pays-Bas", "RW": "Rwanda", "BI": "Burundi", "DJ": "Djibouti", "KM": "Comores"}
+ENGLISH_SPEAKING = {"GH", "NG", "KE", "UG", "TZ", "ZA", "ZM", "ZW", "NA", "BW", "LR", "SL", "GM", "GB", "US", "ET", "EG"}
+
+
+def country_terms(iso: str) -> list[str]:
+    return list(dict.fromkeys(x for x in (FR_NAMES.get(iso), EN_NAMES.get(iso)) if x))
+
+
+
+
+
+

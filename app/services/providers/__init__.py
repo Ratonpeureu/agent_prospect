@@ -29,6 +29,8 @@ def resolve(names: list[str], country: str | None) -> tuple[list[Provider], dict
     chosen: list[Provider] = []
     if "auto" in names:
         for p in _registry.values():
+            if not p.auto:
+                continue
             if not p.supports(country):
                 continue
             if not p.configured():
