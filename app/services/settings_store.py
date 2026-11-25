@@ -34,14 +34,12 @@ FIELDS = [
     dict(key="CRAWL_WORKERS", group="Moteur de recherche", label="Sites lus en parallèle", type="int", min=1, max=32,
          help="Nombre de sites web lus simultanément."),
 
-    dict(key="BRAVE_API_KEY", group="Clés API gratuites", label="Brave Search (recherche de sites web)",
-         type="secret", test="brave", url="https://brave.com/search/api/",
-         help="Retrouve le site officiel des entreprises qui n'en ont pas. Vérifie le quota gratuit actuel."),
-    dict(key="GOOGLE_PLACES_API_KEY", group="Clés API gratuites", label="Google Places (sites, téléphones)",
-         type="secret", test="google_places", url="https://console.cloud.google.com/apis/library/places.googleapis.com",
-         help="Très bonne couverture en Afrique. Quota gratuit limité puis payant : vérifie la grille tarifaire."),
     dict(key="SITE_FINDER_ENABLED", group="Découverte d'emails", label="Rechercher les sites manquants", type="bool",
-         help="À l'enrichissement, cherche le site web des entreprises qui n'en ont pas."),
+         help="À l'enrichissement, retrouve le site web des entreprises qui n'en ont pas (gratuit : devinette de domaine + vérification)."),
+    dict(key="SITE_FINDER_WEB", group="Découverte d'emails", label="Chercher aussi via DuckDuckGo", type="bool",
+         help="Si la devinette de domaine échoue, essaie une recherche web gratuite. Se met en pause automatiquement si DuckDuckGo limite les requêtes."),
+    dict(key="DISCOVERY_FALLBACK_GENERIC", group="Découverte d'emails", label="Ajouter contact@ / info@ non vérifiés", type="bool",
+         help="Si le SMTP est bloqué (port 25), ajoute contact@ et info@ du domaine (si le domaine reçoit des mails) avec le statut « Risqué »."),
          
 ]
 BY_KEY = {f["key"]: f for f in FIELDS}

@@ -12,6 +12,7 @@ class SearchParams:
     limit: int = 50
     auto: bool = True
     filters: dict[str, Any] = field(default_factory=dict)
+    auto: bool = True
 
 
 class Provider:

@@ -11,7 +11,7 @@ from app.services.queries import apply_company_sources, companies_stmt
 from app.services.files import export_info
 from fastapi import BackgroundTasks, File, Form, UploadFile
 from pydantic import BaseModel
-
+import httpx
 from app.services import jobs
 from app.services.company_import import fetch_url, import_rows, parse_bytes
 from app.services.prospecting import run_enrich_job

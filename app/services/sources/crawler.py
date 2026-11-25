@@ -132,8 +132,14 @@ def crawl_site(website: str) -> dict:
     try:
         with httpx.Client(follow_redirects=True, timeout=settings.CRAWL_TIMEOUT, headers=headers, verify=False) as client:
             home = _get(client, base)
+            if home is None:  # essai http<->https puis www.
+                alt = ("http://" + base.split("://", 1)[1]) if base.startswith("https://") else base.replace("http://", "https://", 1)
+                home = _get(client, alt)
+            if home is None:
+                home = _get(client, "https://www." + host)
             if home is None:
                 return {"emails": [], "phones": []}
+            base = f"{home.url.scheme}://{home.url.host}"  # origine finale (après redirections)
             _collect(home.text, emails, phones)
             queue = _links(str(home.url), home.text, host) + [base + p for p in STATIC_PATHS]
             seen, tried = {base, base + "/", str(home.url).rstrip("/")}, 1

@@ -60,6 +60,7 @@ export const KIND_LABEL = {
   enrich: "Enrichissement",
   verify_file: "Vérification de fichier",
   verify_pending: "Vérification des contacts",
+  verify_ids: "Vérification de la sélection",
 };
 
 

@@ -47,3 +47,24 @@ def run_verify_pending_job(job_id: int) -> None:
         jobs.fail(db, job, repr(e))
     finally:
         db.close()
+
+
+
+
+def run_verify_ids_job(job_id: int) -> None:
+    db = SessionLocal()
+    job = db.get(jobs.Job, job_id)
+    try:
+        jobs.start(db, job)
+        p = job.params or {}
+        ids = p.get("ids", [])
+        res = verify_contacts(db, ids, limit=len(ids), use_smtp=p.get("use_smtp"))
+        jobs.finish(db, job, res)
+    except Exception as e:  # noqa: BLE001
+        jobs.fail(db, job, repr(e))
+    finally:
+        db.close()
+
+
+
+

@@ -139,26 +139,4 @@ def run_test(name: str):
         return {"ok": all(x["ok"] for x in res), "results": res,
                 "message": "Si TED échoue : le détail indique le champ invalide ; corrige F_NAME / F_COUNTRY / F_CITY dans providers/ted.py."}
 
-    if name == "brave":
-        if not settings.BRAVE_API_KEY:
-            return {"ok": False, "results": [], "message": "Aucune clé enregistrée."}
-        try:
-            r = httpx.get("https://api.search.brave.com/res/v1/web/search", params={"q": "test", "count": 1},
-                          headers={"X-Subscription-Token": settings.BRAVE_API_KEY}, timeout=20)
-        except httpx.HTTPError as e:
-            return {"ok": False, "results": [], "message": f"Connexion impossible : {type(e).__name__}"}
-        return {"ok": r.status_code == 200, "results": [],
-                "message": {200: "Clé valide.", 401: "Clé refusée (401).", 422: "Clé refusée (422)."}.get(r.status_code, f"HTTP {r.status_code}")}
-
-    if name == "google_places":
-        if not settings.GOOGLE_PLACES_API_KEY:
-            return {"ok": False, "results": [], "message": "Aucune clé enregistrée."}
-        try:
-            r = httpx.post("https://places.googleapis.com/v1/places:searchText", json={"textQuery": "restaurant Dakar", "pageSize": 1},
-                           headers={"X-Goog-Api-Key": settings.GOOGLE_PLACES_API_KEY, "X-Goog-FieldMask": "places.displayName"}, timeout=20)
-        except httpx.HTTPError as e:
-            return {"ok": False, "results": [], "message": f"Connexion impossible : {type(e).__name__}"}
-        return {"ok": r.status_code == 200, "results": [],
-                "message": "Clé valide." if r.status_code == 200 else f"HTTP {r.status_code} : {r.text[:160]}"}
-
     raise HTTPException(404, "Test inconnu")

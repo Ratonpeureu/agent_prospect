@@ -16,6 +16,7 @@ class EnrichIn(BaseModel):
     discover_emails: bool = True
     verify: bool = True
     use_smtp: bool | None = None
+    retry: bool = Field(False, description="True = retraite aussi les entreprises déjà enrichies sans résultat")
 
 
 @router.post("", status_code=202)

@@ -14,10 +14,12 @@ from app.services.blacklist import BlacklistSets, load_blacklist
 from app.services.countries import to_iso
 from app.services.dedup import upsert_company, upsert_contact
 from app.services.email_discovery import discover_candidates
-from app.services.email_verifier import probe_domain, verify_many
+from app.services.email_verifier import _resolve_mx, probe_domain, verify_many
+from app.services.normalize import extract_domain
 from app.services.providers import resolve
 from app.services.providers.base import SearchParams
 from app.services.sources.crawler import crawl_site
+from app.services.sources.site_finder import find_site
 from app.services.verification import verify_contacts
 
 
@@ -25,17 +27,18 @@ def _smtp_enabled(use_smtp: bool | None) -> bool:
     return settings.SMTP_CHECK_ENABLED if use_smtp is None else use_smtp
 
 
-def _discover(db: Session, company: Company, bl: BlacklistSets, stats: Counter) -> None:
-    """Génère contact@, info@, prenom.nom@... et ne garde que les adresses confirmées par SMTP."""
+def _discover(db: Session, company: Company, bl: BlacklistSets, stats: Counter) -> int:
+    """Génère contact@, info@, prenom.nom@... et ne garde que les adresses confirmées par SMTP. Retourne le nombre créé."""
     cands = discover_candidates(company.domain, (company.extra or {}).get("officers", []),
                                 settings.DISCOVERY_MAX_ROLE)
     if not cands:
-        return
+        return 0
     info = probe_domain(company.domain)
     # On ne peut confirmer une adresse que si le serveur rejette les adresses inexistantes (catch_all == False)
     if not info["has_mx"] or info["catch_all"] is not False:
         stats["discovery_domain_unverifiable"] += 1
-        return
+        return 0
+    created = 0
     results = verify_many([c["email"] for c in cands], True)
     for cand in cands:
         r = results[cand["email"]]
@@ -46,12 +49,60 @@ def _discover(db: Session, company: Company, bl: BlacklistSets, stats: Counter) 
             ct.email_status, ct.email_reason = "valid", f"discovery:{cand['kind']};{r['reason']}"
             ct.email_score, ct.is_role, ct.verified_at = r["score"], r["is_role"], datetime.utcnow()
             stats["contacts_discovered"] += 1
+            created += 1
+    return created
+
+
+def _generic_fallback(db: Session, company: Company, bl: BlacklistSets, stats: Counter) -> None:
+    """SMTP inutilisable : ajoute contact@ et info@ si le domaine reçoit des mails. Statut 'risky' (non confirmé)."""
+    hosts, err = _resolve_mx(company.domain)
+    if err or not hosts:
+        return
+    for prefix in ("contact", "info"):
+        ct, st = upsert_contact(db, {"email": f"{prefix}@{company.domain}", "company_id": company.id,
+                                     "source": "discovery"}, bl)
+        if ct is not None and st == "created":
+            ct.email_status, ct.email_reason = "risky", "discovery:generic_unverified"
+            ct.email_score, ct.is_role, ct.verified_at = 40, True, datetime.utcnow()
+            stats["contacts_generic_unverified"] += 1
+
+
+def _find_sites(companies: list[Company], stats: Counter) -> None:
+    """Retrouve le site des entreprises qui n'en ont pas (une seule tentative par entreprise)."""
+    todo = [(c, c.name, c.country, c.city) for c in companies
+            if not c.website and not (c.extra or {}).get("site_search")]
+    if not todo:
+        return
+
+    def work(t):
+        try:
+            return find_site(t[1], t[2], t[3], settings.SITE_FINDER_WEB)
+        except Exception:  # noqa: BLE001
+            return None
+
+    with ThreadPoolExecutor(max_workers=max(1, settings.CRAWL_WORKERS)) as ex:
+        sites = list(ex.map(work, todo))
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    for (c, *_), site in zip(todo, sites):
+        extra = dict(c.extra or {})
+        if site:
+            c.website, c.domain = site, extract_domain(site)
+            extra["site_search"] = f"found {today}"
+            stats["sites_found"] += 1
+        else:
+            extra["site_search"] = f"none {today}"
+            stats["sites_not_found"] += 1
+        c.extra = extra
 
 
 def enrich_companies(db: Session, companies: list[Company], crawl: bool, discover: bool,
                      use_smtp: bool | None, bl: BlacklistSets, stats: Counter) -> list[int]:
-    """Cherche les emails/téléphones des entreprises. Retourne les ids des contacts à vérifier."""
+    """Trouve le site, lit les pages, cherche emails/téléphones. Retourne les ids des contacts à vérifier."""
     new_ids: list[int] = []
+    if settings.SITE_FINDER_ENABLED and (crawl or discover):
+        _find_sites(companies, stats)
+        db.commit()
+
     crawled: dict[str, dict] = {}
     if crawl:
         sites = list({c.website for c in companies if c.website and c.domain})
@@ -60,6 +111,7 @@ def enrich_companies(db: Session, companies: list[Company], crawl: bool, discove
                 crawled[site] = res
 
     smtp_ok = _smtp_enabled(use_smtp)
+    today = datetime.utcnow().strftime("%Y-%m-%d")
     for c in companies:
         found = 0
         res = crawled.get(c.website or "", {})
@@ -74,10 +126,14 @@ def enrich_companies(db: Session, companies: list[Company], crawl: bool, discove
             elif st == "duplicate":
                 found += 1
         if discover and c.domain and not found:
+            created = 0
             if smtp_ok:
-                _discover(db, c, bl, stats)
+                created = _discover(db, c, bl, stats)
             else:
                 stats["discovery_skipped_smtp_disabled"] += 1
+            if not created and settings.DISCOVERY_FALLBACK_GENERIC:
+                _generic_fallback(db, c, bl, stats)
+        c.extra = {**(c.extra or {}), "enriched": today}
     db.commit()
     return new_ids
 
@@ -171,9 +227,19 @@ def run_enrich_job(job_id: int) -> None:
         if p.get("company_ids"):
             companies = db.execute(select(Company).where(Company.id.in_(p["company_ids"]))).scalars().all()
         else:
+            # Toutes les entreprises sans contact : avec site, ou sans site si la recherche de site est active.
+            # Celles déjà traitées ("enriched") sont sautées, sauf retry=true.
             no_contact = ~exists(select(Contact.id).where(Contact.company_id == Company.id))
-            companies = db.execute(select(Company).where(Company.domain.isnot(None), no_contact)
-                                   .limit(p["limit"])).scalars().all()
+            rows = db.execute(select(Company).where(no_contact).order_by(Company.id.desc())).scalars().all()
+            retry = bool(p.get("retry"))
+
+            def eligible(c: Company) -> bool:
+                ex = c.extra or {}
+                if ex.get("enriched") and not retry:
+                    return False
+                return bool(c.domain) or (settings.SITE_FINDER_ENABLED and (retry or not ex.get("site_search")))
+
+            companies = [c for c in rows if eligible(c)][: p["limit"]]
         stats: Counter = Counter()
         bl = load_blacklist(db)
         new_ids = enrich_companies(db, companies, p["crawl_websites"], p["discover_emails"],

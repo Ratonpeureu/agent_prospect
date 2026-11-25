@@ -15,6 +15,8 @@ const LABELS = {
   emails_trouves: "Emails trouvés", uniques: "Uniques", doublons_supprimes: "Doublons supprimés",
   blacklistes_exclus: "Exclus (blacklist)", valides: "Valides", risques: "Risqués",
   inconnus: "Inconnus", invalides: "Invalides",
+  sites_found: "Sites web retrouvés", sites_not_found: "Sites introuvables",
+  contacts_generic_unverified: "Emails génériques (non vérifiés)",
 };
 
 function Chips({ data }) {

@@ -1,16 +1,29 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, Ban, Building2, CheckCircle2, MailCheck, Radar, Settings, Users } from "lucide-react";
+import { AlertTriangle, Ban, Building2, CheckCircle2, Sparkles, MailCheck, Radar, Settings, Users } from "lucide-react";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { countryName } from "../lib/countries";
 import { KIND_LABEL, STATUS, fmtDate, fmtNum } from "../lib/format";
 import { BarList, Badge, PageHeader, Spinner, StatCard } from "../components/ui";
 import { JobStatus } from "../components/JobCard";
+import { useToast } from "../components/Toast";
+import JobCard from "../components/JobCard";
 
 export default function Dashboard() {
   const stats = useAsync(() => api.get("/api/stats"), []);
   const cfg = useAsync(() => api.get("/api/settings"), []);
   const s = stats.data;
+  
+  const toast = useToast();
+  const [jobId, setJobId] = useState(null);
+  const enrichAll = async () => {
+    try {
+      const r = await api.post("/api/enrich", { limit: 300, crawl_websites: true, discover_emails: true, verify: true });
+      setJobId(r.job_id);
+      toast.info(`Enrichissement lancé (tâche #${r.job_id})`);
+    } catch (e) { toast.error(e.message); }
+  };
 
   if (!s) return <div className="grid h-64 place-items-center text-muted"><Spinner size={24} /></div>;
 
@@ -100,6 +113,17 @@ export default function Dashboard() {
           </ul>
         </div>
       </div>
+
+      <div className="card mt-4 flex flex-wrap items-center gap-3 p-5">
+        <Sparkles className="text-brand" size={20} />
+        <div className="flex-1 text-sm">
+          <div className="font-semibold">Enrichir les entreprises sans contact</div>
+          <div className="text-muted">Retrouve le site web puis les emails, par lots de 300. Relance le bouton pour traiter le lot suivant.</div>
+        </div>
+        <button className="btn btn-primary" onClick={enrichAll}>Lancer un lot</button>
+      </div>
+      {jobId && <div className="mt-4"><JobCard jobId={jobId} /></div>}
+
 
       <div className="card mt-4 flex flex-wrap items-center gap-3 p-5">
         <MailCheck className="text-brand" size={20} />

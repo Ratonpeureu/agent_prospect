@@ -1,3 +1,5 @@
+from typing import Any, Literal
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
@@ -7,11 +9,14 @@ from app.database import get_db
 from app.models import Company, Contact
 from app.schemas import ContactIn, ContactOut, ContactPatch
 from app.services import jobs
-from app.services.blacklist import load_blacklist
+from app.services.blacklist import add_entries, load_blacklist
 from app.services.dedup import upsert_contact
 from app.services.queries import contacts_stmt
-from app.services.verification import run_verify_pending_job, verify_contacts
+from app.services.verification import run_verify_ids_job, run_verify_pending_job, verify_contacts
 from app.services.files import export_info
+
+
+
 router = APIRouter(prefix="/api/contacts", tags=["Contacts"])
 
 
@@ -19,7 +24,51 @@ class BatchIn(BaseModel):
     ids: list[int]
     use_smtp: bool | None = None
 
+class BulkIn(BaseModel):
+    action: Literal["verify", "blacklist", "delete"]
+    ids: list[int] | None = None
+    filters: dict[str, Any] = {}
+    limit: int | None = None
 
+
+BULK_FILTERS = {"q", "status", "country", "city", "sector", "source", "exclude_source", "company_id",
+                "has_phone", "has_website", "job_title", "domain", "exported", "file_id"}
+
+
+@router.post("/bulk")
+def bulk(body: BulkIn, bg: BackgroundTasks, db: Session = Depends(get_db)):
+    if body.ids:
+        stmt = contacts_stmt(ids=body.ids)
+    else:
+        f = {k: v for k, v in body.filters.items() if k in BULK_FILTERS}
+        for k in ("company_id", "file_id"):
+            if f.get(k):
+                f[k] = int(f[k])
+        stmt = contacts_stmt(**f)
+    if body.limit:
+        stmt = stmt.limit(body.limit)
+    ids = [c.id for c, _ in db.execute(stmt).all()]
+    if not ids:
+        return {"message": "Aucun contact concerné"}
+
+    if body.action == "delete":
+        res = db.execute(delete(Contact).where(Contact.id.in_(ids)))
+        db.commit()
+        return {"message": f"{res.rowcount} contact(s) supprimé(s)"}
+
+    if body.action == "blacklist":
+        emails = db.execute(select(Contact.email).where(Contact.id.in_(ids))).scalars().all()
+        added = add_entries(db, "email", list(emails), "manual:bulk")
+        return {"message": f"{added} adresse(s) ajoutée(s) à la blacklist"}
+
+    ids = list(db.execute(select(Contact.id).where(Contact.id.in_(ids), Contact.email_status != "blacklisted")).scalars())
+    if len(ids) > 200:
+        job = jobs.create_job(db, "verify_ids", {"ids": ids, "use_smtp": None})
+        bg.add_task(run_verify_ids_job, job.id)
+        return {"message": f"Vérification de {len(ids)} contacts lancée (tâche #{job.id})", "job_id": job.id}
+    r = verify_contacts(db, ids, limit=len(ids))
+    return {"message": f"{r['verified']} vérifié(s) : {r['valid']} valides, {r['risky']} risqués, {r['invalid']} invalides"}
+    
 def out(c: Contact, co: Company | None, ex: tuple | None = None) -> ContactOut:
     return ContactOut(
         id=c.id, email=c.email, first_name=c.first_name, last_name=c.last_name, full_name=c.full_name,
