@@ -40,6 +40,12 @@ FIELDS = [
          help="Si la devinette de domaine échoue, essaie une recherche web gratuite. Se met en pause automatiquement si DuckDuckGo limite les requêtes."),
     dict(key="DISCOVERY_FALLBACK_GENERIC", group="Découverte d'emails", label="Ajouter contact@ / info@ non vérifiés", type="bool",
          help="Si le SMTP est bloqué (port 25), ajoute contact@ et info@ du domaine (si le domaine reçoit des mails) avec le statut « Risqué »."),
+
+    dict(key="GITHUB_TOKEN", group="Clés API gratuites", label="GitHub (recherche de personnes)", type="secret",
+         url="https://github.com/settings/tokens",
+         help="Optionnel : sans clé, 10 recherches/minute. Un token sans aucune permission suffit."),
+    dict(key="PEOPLE_MAX_PER_COMPANY", group="Découverte d'emails", label="Personnes max. par entreprise", type="int",
+         min=1, max=100, help="Les plus hauts niveaux (dirigeants, directeurs) sont gardés en premier."),
          
 ]
 BY_KEY = {f["key"]: f for f in FIELDS}

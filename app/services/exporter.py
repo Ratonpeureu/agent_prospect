@@ -6,10 +6,12 @@ from openpyxl.utils import get_column_letter
 
 from app.models import Company, Contact
 
+
 CONTACT_COLS = ["Entreprise", "ID légal", "Site web", "Secteur", "Ville", "Pays", "Adresse",
-                "Téléphone entreprise", "Prénom", "Nom", "Nom complet", "Poste", "Email",
-                "Téléphone contact", "Statut email", "Raison", "Score", "Adresse générique",
-                "Source", "Date ajout"]
+                "Téléphone entreprise", "Prénom", "Nom", "Nom complet", "Poste", "Niveau", "Département",
+                "Profil (URL)", "Email", "Téléphone contact", "Statut email", "Raison", "Score",
+                "Adresse générique", "Source", "Date ajout"]
+
 COMPANY_COLS = ["Entreprise", "ID légal", "Site web", "Domaine", "Secteur", "Ville", "Pays", "Adresse",
                 "Téléphone", "Date création", "Effectif", "Forme juridique", "Statut", "Dirigeants",
                 "Sources", "Nb contacts", "Date ajout"]
@@ -40,7 +42,7 @@ def contacts_df(pairs: list[tuple[Contact, Company | None]]) -> pd.DataFrame:
             co.name if co else None, co.legal_id if co else None, co.website if co else None,
             co.sector if co else None, co.city if co else None, co.country if co else None,
             co.address if co else None, co.phone if co else None,
-            c.first_name, c.last_name, c.full_name, c.job_title, c.email, c.phone,
+            c.first_name, c.last_name, c.full_name, c.job_title, c.seniority, c.department, c.profile_url,c.email, c.phone,
             c.email_status, c.email_reason, c.email_score, "oui" if c.is_role else "non",
             c.source, c.created_at.strftime("%Y-%m-%d") if c.created_at else None,
         ])

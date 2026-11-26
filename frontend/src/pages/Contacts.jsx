@@ -4,11 +4,10 @@ import { Ban, Download, Plus, RefreshCw, ShieldCheck, Trash2, Users } from "luci
 import { api } from "../lib/api";
 import { useAsync, useDebounce } from "../lib/hooks";
 import { COUNTRIES } from "../lib/countries";
-import { STATUS, fmtDate } from "../lib/format";
 import { Badge, Empty, Field, Modal, PageHeader, Pagination, Spinner, StatusBadge, Toggle } from "../components/ui";
 import SourceFilter from "../components/SourceFilter";
 import { useToast } from "../components/Toast";
-
+import { DEPT_LABEL, LEVEL_LABEL, STATUS, fmtDate } from "../lib/format";
 const PAGE = 50;
 const ORDER = ["valid", "risky", "unknown", "invalid", "unverified", "blacklisted"];
 const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== "" && v != null && v !== false));
@@ -21,7 +20,7 @@ export default function Contacts() {
     q: sp.get("q") || "", status: sp.get("status") || "", country: sp.get("country") || "", city: "",
     sector: sp.get("sector") || "", source: sp.get("source") || "", exclude_source: sp.get("exclude_source") || "",
     job_title: "", domain: "", has_phone: false, has_website: false, company_id: sp.get("company_id") || "",
-    exported: sp.get("exported") || "", file_id: sp.get("file_id") || "",
+    exported: sp.get("exported") || "", file_id: sp.get("file_id") || "",department: sp.get("department") || "", seniority: sp.get("seniority") || "", personal: false, has_profile: false,
   });
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState(new Set());
@@ -40,7 +39,7 @@ export default function Contacts() {
   const setSrc = (inc, exc) => { setF((x) => ({ ...x, source: inc, exclude_source: exc })); setPage(0); resetSel(); };
   const statuses = f.status ? f.status.split(",") : [];
   const toggleStatus = (s) => upd("status", (statuses.includes(s) ? statuses.filter((x) => x !== s) : [...statuses, s]).join(","));
-  const sourceNames = [...new Set([...(sources.data || []).map((s) => s.name), "website", "discovery", "manual", "import"])];
+  const sourceNames = [...new Set([...(sources.data || []).map((s) => s.name), "website", "discovery", "people_pattern", "web_public", "profiles", "github", "manual", "import"])];
 
   const allSelected = items.length > 0 && items.every((c) => selected.has(c.id));
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(items.map((c) => c.id)));
@@ -118,6 +117,14 @@ export default function Contacts() {
           <input className="input" placeholder="Ville" value={f.city} onChange={(e) => upd("city", e.target.value)} />
           <input className="input" placeholder="Secteur" value={f.sector} onChange={(e) => upd("sector", e.target.value)} />
           <input className="input" placeholder="Poste" value={f.job_title} onChange={(e) => upd("job_title", e.target.value)} />
+          <select className="input" value={f.seniority} onChange={(e) => upd("seniority", e.target.value)}>
+            <option value="">Niveau : tous</option>
+            {Object.entries(LEVEL_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+          <select className="input" value={f.department} onChange={(e) => upd("department", e.target.value)}>
+            <option value="">Département : tous</option>
+            {Object.entries(DEPT_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
           <input className="input" placeholder="Domaine email (ex : gmail.com)" value={f.domain} onChange={(e) => upd("domain", e.target.value)} />
           <select className="input" value={f.exported} onChange={(e) => upd("exported", e.target.value)}>
             <option value="">Export : indifférent</option>
@@ -127,6 +134,8 @@ export default function Contacts() {
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-brand" checked={f.has_phone} onChange={(e) => upd("has_phone", e.target.checked)} /> Téléphone</label>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-brand" checked={f.has_website} onChange={(e) => upd("has_website", e.target.checked)} /> Site web</label>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-brand" checked={f.personal} onChange={(e) => upd("personal", e.target.checked)} /> Personnes nommées</label>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-brand" checked={f.has_profile} onChange={(e) => upd("has_profile", e.target.checked)} /> Avec profil</label>
             <label className="flex items-center gap-2 text-sm" title="Décoche pour exporter sans marquer les lignes ni conserver le fichier"><input type="checkbox" className="accent-brand" checked={mark} onChange={(e) => setMark(e.target.checked)} /> Marquer comme exporté</label>
           </div>
         </div>
@@ -183,7 +192,16 @@ export default function Contacts() {
                   <tr key={c.id} className="border-t border-line hover:bg-soft/50">
                     <td className="px-3"><input type="checkbox" className="accent-brand" checked={selected.has(c.id)} onChange={() => toggle(c.id)} /></td>
                     <td className="px-3 py-2.5"><div className="font-medium">{c.email}</div>{c.is_role && <div className="text-xs text-muted">adresse générique</div>}</td>
-                    <td className="px-3 py-2.5">{c.full_name || "—"}<div className="text-xs text-muted">{c.job_title || ""}</div></td>
+                    <td className="px-3 py-2.5">
+                      {c.full_name || "—"}
+                      <div className="text-xs text-muted">{c.job_title || ""}</div>
+                      {c.phone && <div className="text-xs text-muted">{c.phone}</div>}
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                        {c.seniority && <Badge tone="brand">{LEVEL_LABEL[c.seniority] || c.seniority}</Badge>}
+                        {c.department && <Badge>{DEPT_LABEL[c.department] || c.department}</Badge>}
+                        {c.profile_url && <a href={c.profile_url} target="_blank" rel="noreferrer" className="text-xs text-brand hover:underline">Profil</a>}
+                      </div>
+                    </td>
                     <td className="px-3 py-2.5">{c.company_name || "—"}</td>
                     <td className="px-3 py-2.5"><StatusBadge status={c.email_status} reason={c.email_reason} /></td>
                     <td className="px-3 py-2.5"><Badge>{c.source || "—"}</Badge></td>

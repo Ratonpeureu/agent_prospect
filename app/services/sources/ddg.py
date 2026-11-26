@@ -6,6 +6,9 @@ import time
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+from app.services import applog
+
+log = applog.get("ddg")
 
 URL = "https://html.duckduckgo.com/html/"
 HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
@@ -51,12 +54,14 @@ def search(query: str, pages: int = 1) -> list[tuple[str, str]]:
                 time.sleep(max(0.0, 2.0 - (time.time() - _last)))
                 try:
                     r = c.post(URL, data=data)
-                except httpx.HTTPError:
+                except httpx.HTTPError as e:
                     _last = time.time()
+                    log.warning("DuckDuckGo injoignable (%s) pour %r", type(e).__name__, query)
                     break
                 _last = time.time()
                 if r.status_code != 200 or "anomaly" in r.text:
                     _blocked_until = time.time() + 600
+                    log.warning("EVENT ddg.blocked status=%s pause=600s query=%r", r.status_code, query)
                     break
             for attrs, label in A_RE.findall(r.text):
                 m = re.search(r'href="([^"]+)"', attrs)

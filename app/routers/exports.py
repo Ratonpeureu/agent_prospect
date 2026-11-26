@@ -44,6 +44,8 @@ def export_contacts(format: str = "xlsx", q: str | None = None, status: str | No
                     company_id: int | None = None, has_phone: bool | None = None,
                     has_website: bool | None = None, job_title: str | None = None,
                     domain: str | None = None, exported: str | None = None, file_id: int | None = None,
+                    department: str | None = None, seniority: str | None = None,
+                    personal: bool | None = None, has_profile: bool | None = None,
                     ids: str | None = None, limit: int | None = None, record: bool = True,
                     db: Session = Depends(get_db)):
     """Export filtré. exported=no : seulement les contacts jamais exportés. ids=1,2,3 : sélection précise.
@@ -52,6 +54,7 @@ def export_contacts(format: str = "xlsx", q: str | None = None, status: str | No
     stmt = contacts_stmt(q=q, status=status, country=country, city=city, sector=sector, source=source,
                          company_id=company_id, has_phone=has_phone, has_website=has_website,
                          job_title=job_title, domain=domain, exclude_source=exclude_source,
+                         department=department, seniority=seniority, personal=personal, has_profile=has_profile,
                          exported=exported, file_id=file_id, ids=id_list)
     if limit:
         stmt = stmt.limit(limit)

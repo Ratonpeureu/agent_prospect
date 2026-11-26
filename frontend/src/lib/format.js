@@ -37,6 +37,8 @@ export function reasonLabel(r) {
       if (p.startsWith("smtp_temporary")) return "Refus temporaire (greylisting)";
       if (p.startsWith("smtp_blocked")) return "Serveur bloquant les tests";
       if (p.startsWith("discovery:")) return `Trouvée par pattern (${p.split(":")[1]})`;
+      if (p === "people:pattern_inferred") return "Email déduit du format du domaine (non vérifié)";
+      if (p === "people:pattern") return "Email de personne (format du domaine)";
       if (p.startsWith("blacklist")) return "Blacklistée";
       if (p.startsWith("error:")) return "Erreur interne";
       return p;
@@ -78,6 +80,10 @@ export const FILE_CATEGORY = {
 export const fmtSize = (b) =>
   (b || 0) > 1048576 ? `${(b / 1048576).toFixed(1)} Mo` : `${Math.max(1, Math.round((b || 0) / 1024))} Ko`;
 
-
+export const LEVEL_LABEL = { c_level: "Dirigeant", director: "Directeur", manager: "Manager", staff: "Équipe" };
+export const DEPT_LABEL = {
+  direction: "Direction", commercial: "Commercial", marketing: "Marketing", finance: "Finance", rh: "RH",
+  it: "IT / Tech", operations: "Opérations", achats: "Achats", juridique: "Juridique",
+};
 
 

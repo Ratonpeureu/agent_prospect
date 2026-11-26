@@ -65,7 +65,7 @@ def _http_ping(name: str, url: str, **kw) -> dict:
 @router.post("/test/{name}")
 def run_test(name: str):
     if name == "smtp":
-        with ThreadPoolExecutor(max_workers=3) as ex:
+        with ThreadPoolExecutor(max_workers=5) as ex:
             results = list(ex.map(_smtp_ping, SMTP_HOSTS))
         ok = any(r["ok"] for r in results)
         return {"ok": ok, "results": results,
@@ -87,7 +87,7 @@ def run_test(name: str):
              {"params": {"query": "test", "mode": "artlist", "format": "json", "maxrecords": 1}}),
             ("Common Crawl", "https://index.commoncrawl.org/collinfo.json", {}),
         ]
-        with ThreadPoolExecutor(max_workers=5) as ex:
+        with ThreadPoolExecutor(max_workers=8) as ex:
             results = list(ex.map(lambda j: _http_ping(j[0], j[1], **j[2]), jobs))
         return {"ok": all(r["ok"] for r in results), "results": results, "message": ""}
 

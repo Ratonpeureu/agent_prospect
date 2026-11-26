@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { Ban, Building2, LayoutDashboard, ListChecks, LogOut,FolderOpen, MailCheck, Menu, Moon, Radar, Settings, Sun, Users, X } from "lucide-react";
-import { api, getKey, setKey } from "../lib/api";
-import { useAsync } from "../lib/hooks";
+import { Ban, Building2, FolderOpen, LayoutDashboard, ListChecks, LogOut, MailCheck, Menu, Moon, Radar, ScrollText, Settings, Sun, Users, X } from "lucide-react";
+import { getKey, setKey } from "../lib/api";
+import { useActiveJobs } from "../lib/hooks";
 import { applyTheme } from "../lib/theme";
 import { Spinner } from "./ui";
 
@@ -15,6 +15,8 @@ const NAV = [
   { to: "/blacklist", label: "Blacklist", icon: Ban },
   { to: "/jobs", label: "Tâches", icon: ListChecks },
   { to: "/files", label: "Fichiers", icon: FolderOpen },
+  { to: "/files", label: "Fichiers", icon: FolderOpen },
+  { to: "/logs", label: "Journal", icon: ScrollText },
   { to: "/settings", label: "Configuration", icon: Settings },
 
 ];
@@ -23,16 +25,10 @@ export default function Layout() {
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState(document.documentElement.classList.contains("dark") ? "dark" : "light");
   const loc = useLocation();
-  const jobs = useAsync(() => api.get("/api/jobs", { limit: 10 }), []);
+  const { running } = useActiveJobs();
 
   useEffect(() => setOpen(false), [loc.pathname]);
-  useEffect(() => {
-    const t = setInterval(jobs.reload, 5000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  const running = (jobs.data || []).filter((j) => j.status === "running" || j.status === "queued").length;
   const toggleTheme = () => {
     const t = theme === "dark" ? "light" : "dark";
     applyTheme(t);

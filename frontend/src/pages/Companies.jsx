@@ -237,6 +237,23 @@ function CompanyModal({ id, onClose, onChanged }) {
             </div>
           )}
 
+          {(extra.people || []).length > 0 && (
+            <div>
+              <h3 className="mb-2 text-sm font-semibold">Personnes identifiées sans email ({extra.people.length})</h3>
+              <ul className="divide-y divide-line rounded-xl border border-line">
+                {extra.people.map((pe, i) => (
+                  <li key={i} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{pe.first_name} {pe.last_name}</div>
+                      <div className="text-xs text-muted">{pe.job_title || "—"} · {pe.source}</div>
+                    </div>
+                    {pe.profile_url && <a href={pe.profile_url} target="_blank" rel="noreferrer" className="text-xs text-brand hover:underline">Profil</a>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div>
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-semibold">Contacts ({contacts.data?.total ?? 0})</h3>

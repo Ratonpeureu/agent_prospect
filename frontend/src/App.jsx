@@ -14,6 +14,7 @@ import Blacklist from "./pages/Blacklist";
 import Jobs from "./pages/Jobs";
 import SettingsPage from "./pages/SettingsPage";
 import Files from "./pages/Files";
+import Logs from "./pages/Logs";
 
 export default function App() {
   const [auth, setAuth] = useState("loading"); // loading | ok | needkey | offline
@@ -69,6 +70,7 @@ export default function App() {
           <Route path="verify" element={<Verify />} />
           <Route path="blacklist" element={<Blacklist />} />
           <Route path="files" element={<Files />} />
+          <Route path="logs" element={<Logs />} />
           <Route path="jobs" element={<Jobs />} />
           <Route path="settings" element={<SettingsPage />} />      
           <Route path="*" element={<Dashboard />} />

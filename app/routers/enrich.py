@@ -17,6 +17,11 @@ class EnrichIn(BaseModel):
     verify: bool = True
     use_smtp: bool | None = None
     retry: bool = Field(False, description="True = retraite aussi les entreprises déjà enrichies sans résultat")
+    find_people: bool = True
+    person_titles: list[str] = []
+    person_levels: list[str] = []
+    person_departments: list[str] = []
+    people_sources: list[str] = ["website", "registry"]
 
 
 @router.post("", status_code=202)

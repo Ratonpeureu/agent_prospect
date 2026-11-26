@@ -36,7 +36,8 @@ def _apply_export(stmt, entity_type: str, col, exported, file_id):
 
 def contacts_stmt(q=None, status=None, country=None, city=None, sector=None, source=None,
                   company_id=None, has_phone=None, has_website=None, job_title=None, domain=None,
-                  exclude_source=None, exported=None, file_id=None, ids=None):
+                  exclude_source=None, exported=None, file_id=None, ids=None,
+                  department=None, seniority=None, personal=None, has_profile=None):
     stmt = select(Contact, Company).outerjoin(Company, Contact.company_id == Company.id)
     if status:
         stmt = stmt.where(Contact.email_status.in_(split_csv(status)))
@@ -60,8 +61,16 @@ def contacts_stmt(q=None, status=None, country=None, city=None, sector=None, sou
         stmt = stmt.where(or_(Contact.source.is_(None), Contact.source.not_in(exc)))
     if company_id:
         stmt = stmt.where(Contact.company_id == company_id)
-    if job_title:
-        stmt = stmt.where(Contact.job_title.ilike(f"%{job_title}%"))
+    if job_title:  # plusieurs postes séparés par des virgules = OU
+        stmt = stmt.where(or_(*[Contact.job_title.ilike(f"%{t}%") for t in split_csv(job_title)]))
+    if department:
+        stmt = stmt.where(Contact.department.in_(split_csv(department)))
+    if seniority:
+        stmt = stmt.where(Contact.seniority.in_(split_csv(seniority)))
+    if personal:  # personnes nommées, pas les adresses génériques (info@, contact@)
+        stmt = stmt.where(Contact.first_name.isnot(None), Contact.last_name.isnot(None), Contact.is_role.is_(False))
+    if has_profile:
+        stmt = stmt.where(Contact.profile_url.isnot(None))
     if domain:
         stmt = stmt.where(Contact.email.ilike(f"%@{domain}"))
     if has_phone:

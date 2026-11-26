@@ -57,6 +57,11 @@ class Contact(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    phone: Mapped[str | None] = mapped_column(String(80))
+    profile_url: Mapped[str | None] = mapped_column(String(500))   # profil public (ex. LinkedIn)
+    department: Mapped[str | None] = mapped_column(String(40))     # direction, commercial, marketing, finance, rh, it...
+    seniority: Mapped[str | None] = mapped_column(String(20))      # c_level | director | manager | staff
+    evidence: Mapped[str | None] = mapped_column(String(500))
 
     company: Mapped[Company | None] = relationship(back_populates="contacts")
 
@@ -83,7 +88,11 @@ class Job(Base):
     file_path: Mapped[str | None] = mapped_column(String(500))
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    progress: Mapped[dict | None] = mapped_column(JSON)          # checkpoint : permet la reprise
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime)
+    attempts: Mapped[int | None] = mapped_column(Integer, default=0)
 
 
 

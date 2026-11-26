@@ -10,9 +10,7 @@ class SearchParams:
     location: str = ""
     country: str | None = None
     limit: int = 50
-    auto: bool = True
     filters: dict[str, Any] = field(default_factory=dict)
-    auto: bool = True
 
 
 class Provider:
@@ -26,6 +24,7 @@ class Provider:
     key_env: str | None = None          # nom du paramètre de config contenant la clé (si requise)
     signup_url: str = ""
     filters: dict[str, str] = {}
+    auto: bool = True                   # False = jamais lancée en mode "Auto" (gdelt, common_crawl)
 
     def configured(self) -> bool:
         return not self.key_env or bool(getattr(settings, self.key_env, ""))

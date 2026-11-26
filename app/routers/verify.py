@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas import VerifyTextIn
 from app.services import jobs
-from app.services.file_import import build_workbook, process_rows, run_file_job
+
+from app.services.file_import import build_workbook, process_rows, run_file_job, stash_upload
 from app.services.normalize import EMAIL_RE
 from app.services.files import save_file
 router = APIRouter(prefix="/api/verify", tags=["Vérification d'emails"])
@@ -51,6 +52,8 @@ def verify_file(bg: BackgroundTasks, file: UploadFile = File(...), save_to_db: b
     content = file.file.read()
     if len(content) > MAX_FILE:
         raise HTTPException(413, "Fichier trop volumineux (max 20 Mo)")
-    job = jobs.create_job(db, "verify_file", {"filename": name, "save_to_db": save_to_db})
+    job = jobs.create_job(db, "verify_file", {"filename": name, "save_to_db": save_to_db,
+                                              "include_risky": include_risky, "use_smtp": use_smtp})
+    stash_upload(db, job, content)  # copie sur disque : reprise possible après redémarrage
     bg.add_task(run_file_job, job.id, content, name, save_to_db, include_risky, use_smtp)
     return {"job_id": job.id, "status": job.status}

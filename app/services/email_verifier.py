@@ -3,6 +3,7 @@ import smtplib
 import socket
 import string
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import dns.exception
@@ -11,6 +12,9 @@ from email_validator import EmailNotValidError, validate_email
 
 from app.config import settings
 from app.services.normalize import ROLE_LOCALS
+from app.services import applog
+
+log = applog.get("verifier")
 
 DISPOSABLE = {
     "mailinator.com", "yopmail.com", "yopmail.fr", "guerrillamail.com", "guerrillamail.net",
@@ -62,6 +66,7 @@ def _resolve_mx(domain: str) -> tuple[list[str] | None, str | None]:
 
 
 def _probe(host: str, rcpt: str) -> tuple[int | None, str]:
+    t0 = time.perf_counter()
     try:
         with smtplib.SMTP(timeout=settings.SMTP_TIMEOUT) as s:
             s.connect(host, 25)
@@ -70,7 +75,12 @@ def _probe(host: str, rcpt: str) -> tuple[int | None, str]:
             code, msg = s.rcpt(rcpt)
             return code, (msg.decode(errors="ignore") if isinstance(msg, bytes) else str(msg))
     except (smtplib.SMTPException, socket.timeout, OSError) as e:
+        log.debug("SMTP injoignable %s (%s) : %s", host, rcpt.split("@")[-1], e)
         return None, str(e)
+    finally:
+        d = time.perf_counter() - t0
+        if d >= settings.SLOW_OP_S:
+            log.warning("SLOW smtp %s (%s) : %.1fs", host, rcpt.split("@")[-1], d)
 
 
 def _is_catch_all(domain: str, hosts: list[str]) -> bool | None:
@@ -148,7 +158,8 @@ def verify_email(email: str, use_smtp: bool | None = None) -> dict:
 def _safe(email: str, use_smtp: bool | None) -> dict:
     try:
         return verify_email(email, use_smtp)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  
+        log.warning("verify_email a planté (domaine %s)", email.split("@")[-1], exc_info=True)
         return _result(email, "unknown", f"error:{type(e).__name__}")
 
 

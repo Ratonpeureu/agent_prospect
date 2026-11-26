@@ -31,9 +31,10 @@ class BulkIn(BaseModel):
     limit: int | None = None
 
 
-BULK_FILTERS = {"q", "status", "country", "city", "sector", "source", "exclude_source", "company_id",
-                "has_phone", "has_website", "job_title", "domain", "exported", "file_id"}
 
+BULK_FILTERS = {"q", "status", "country", "city", "sector", "source", "exclude_source", "company_id",
+                "has_phone", "has_website", "job_title", "domain", "exported", "file_id",
+                "department", "seniority", "personal", "has_profile"}
 
 @router.post("/bulk")
 def bulk(body: BulkIn, bg: BackgroundTasks, db: Session = Depends(get_db)):
@@ -62,20 +63,25 @@ def bulk(body: BulkIn, bg: BackgroundTasks, db: Session = Depends(get_db)):
         return {"message": f"{added} adresse(s) ajoutée(s) à la blacklist"}
 
     ids = list(db.execute(select(Contact.id).where(Contact.id.in_(ids), Contact.email_status != "blacklisted")).scalars())
-    if len(ids) > 200:
+    if len(ids) > 30:
         job = jobs.create_job(db, "verify_ids", {"ids": ids, "use_smtp": None})
         bg.add_task(run_verify_ids_job, job.id)
         return {"message": f"Vérification de {len(ids)} contacts lancée (tâche #{job.id})", "job_id": job.id}
     r = verify_contacts(db, ids, limit=len(ids))
     return {"message": f"{r['verified']} vérifié(s) : {r['valid']} valides, {r['risky']} risqués, {r['invalid']} invalides"}
     
+
+
 def out(c: Contact, co: Company | None, ex: tuple | None = None) -> ContactOut:
     return ContactOut(
         id=c.id, email=c.email, first_name=c.first_name, last_name=c.last_name, full_name=c.full_name,
-        job_title=c.job_title, phone=c.phone, company_id=c.company_id, company_name=co.name if co else None,
+        job_title=c.job_title, phone=c.phone, profile_url=c.profile_url, department=c.department,
+        seniority=c.seniority, evidence=c.evidence, company_id=c.company_id,
+        company_name=co.name if co else None,
         source=c.source, email_status=c.email_status, email_reason=c.email_reason,
         email_score=c.email_score, is_role=c.is_role, verified_at=c.verified_at, created_at=c.created_at,
         exports_count=ex[0] if ex else 0, last_exported_at=ex[1] if ex else None)
+
 
 @router.get("", response_model=list[ContactOut])
 def list_contacts(response: Response, q: str | None = None, status: str | None = None,
@@ -84,18 +90,20 @@ def list_contacts(response: Response, q: str | None = None, status: str | None =
                   company_id: int | None = None, has_phone: bool | None = None,
                   has_website: bool | None = None, job_title: str | None = None, domain: str | None = None,
                   exported: str | None = None, file_id: int | None = None,
+                  department: str | None = None, seniority: str | None = None,
+                  personal: bool | None = None, has_profile: bool | None = None,
                   limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
     stmt = contacts_stmt(q=q, status=status, country=country, city=city, sector=sector, source=source,
                          company_id=company_id, has_phone=has_phone, has_website=has_website,
                          job_title=job_title, domain=domain, exclude_source=exclude_source,
-                         exported=exported, file_id=file_id)
+                         exported=exported, file_id=file_id, department=department, seniority=seniority,
+                         personal=personal, has_profile=has_profile)
     total = db.execute(stmt.with_only_columns(func.count(Contact.id), maintain_column_froms=True)
                        .order_by(None)).scalar_one()
     response.headers["X-Total-Count"] = str(total)
     rows = db.execute(stmt.limit(limit).offset(offset)).all()
     info = export_info(db, "contact", [c.id for c, _ in rows])
     return [out(c, co, info.get(c.id)) for c, co in rows]
-
 
 @router.post("", response_model=ContactOut, status_code=201)
 def create_contact(body: ContactIn, db: Session = Depends(get_db)):

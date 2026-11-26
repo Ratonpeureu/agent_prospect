@@ -7,14 +7,15 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import SessionLocal
-from app.services import jobs
+from app.services import applog, jobs
 from app.services.blacklist import is_blacklisted, load_blacklist
 from app.services.dedup import upsert_company, upsert_contact
 from app.services.email_verifier import verify_many
 from app.services.exporter import df_to_xlsx_bytes
 from app.services.normalize import EMAIL_RE, FREE_DOMAINS, extract_domain, guess_name_from_email
 from sqlalchemy import select
-
+import time
+import uuid
 from app.models import Contact
 from app.services.files import fmt_of, link_items, save_file
 
@@ -83,7 +84,7 @@ def parse_rows(content: bytes, filename: str) -> list[dict]:
 
 
 def process_rows(db: Session, rows: list[dict], use_smtp: bool | None = None,
-                 save_to_db: bool = False) -> tuple[list[dict], list[dict], dict]:
+                 save_to_db: bool = False, on_progress=None) -> tuple[list[dict], list[dict], dict]:
     """Dédoublonne, exclut la blacklist, vérifie. Retourne (traités, exclus, résumé)."""
     seen: dict[str, dict] = {}
     duplicates = 0
@@ -104,7 +105,13 @@ def process_rows(db: Session, rows: list[dict], use_smtp: bool | None = None,
     for r in excluded:
         r.update(status="blacklisted", reason="blacklist", score=0, is_role=False)
 
-    results = verify_many([r["email"] for r in todo], use_smtp)
+    results: dict[str, dict] = {}
+    emails_todo = [r["email"] for r in todo]
+    for i in range(0, len(emails_todo), 200):  # par lots : progression visible
+        results.update(verify_many(emails_todo[i:i + 200], use_smtp))
+        if on_progress:
+            on_progress(min(i + 200, len(emails_todo)), len(emails_todo))
+
     for r in todo:
         res = results[r["email"]]
         r.update(email=res["email"], status=res["status"], reason=res["reason"],
@@ -155,14 +162,37 @@ def build_workbook(done: list[dict], excluded: list[dict], summary: dict, includ
     return df_to_xlsx_bytes(sheets)
 
 
+
+def stash_upload(db: Session, job, content: bytes) -> None:
+    """Copie le fichier envoyé sur le disque : permet de reprendre la vérification après un redémarrage."""
+    folder = os.path.join(settings.DATA_DIR, "pending")
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, f"{job.id}_{uuid.uuid4().hex[:6]}.bin")
+    with open(path, "wb") as fh:
+        fh.write(content)
+    job.params = {**(job.params or {}), "pending_path": path}
+    db.commit()
+
+
+@jobs.tracked("verify_file")
 def run_file_job(job_id: int, content: bytes, filename: str, save_to_db: bool,
                  include_risky: bool, use_smtp: bool | None) -> None:
     db = SessionLocal()
     job = db.get(jobs.Job, job_id)
+    jl = applog.jlog("verification", job_id)
+    t0 = time.time()
     try:
         jobs.start(db, job)
         rows = parse_rows(content, filename)
-        done, excluded, summary = process_rows(db, rows, use_smtp, save_to_db)
+        jl.info("EVENT file.parsed filename=%s rows=%d", filename, len(rows))
+        prog = {"phase": "verify", "message": "Vérification des adresses", "percent": 0}
+        jobs.checkpoint(db, job, prog)
+
+        def on_progress(done_n: int, total: int) -> None:
+            prog.update(message=f"Vérification {done_n}/{total}", percent=int(100 * done_n / max(1, total)))
+            jobs.checkpoint(db, job, prog)
+
+        done, excluded, summary = process_rows(db, rows, use_smtp, save_to_db, on_progress)
         data = build_workbook(done, excluded, summary, include_risky)
 
         # Fichier source conservé + Excel résultat conservé
@@ -177,13 +207,38 @@ def run_file_job(job_id: int, content: bytes, filename: str, save_to_db: bool,
                 ids += db.execute(select(Contact.id).where(Contact.email.in_(emails[i:i + 1000]))).scalars().all()
             link_items(db, src, "contact", ids, "import")
         db.commit()
-        jobs.finish(db, job, summary, out_file.path)
+        jobs.finish(db, job, {**summary, "duration_s": round(time.time() - t0)}, out_file.path)
+        pend = (job.params or {}).get("pending_path")
+        if pend and os.path.exists(pend):
+            try:
+                os.remove(pend)
+            except OSError:
+                pass
     except Exception as e:  # noqa: BLE001
+        jl.exception("Tâche verify_file plantée")
         jobs.fail(db, job, repr(e))
     finally:
         db.close()
 
 
+def run_file_job_resume(job_id: int) -> None:
+    """Reprise : relit le fichier copié sur disque et relance la vérification (depuis le début du fichier)."""
+    db = SessionLocal()
+    try:
+        job = db.get(jobs.Job, job_id)
+        p = (job.params or {}) if job else {}
+        path = p.get("pending_path")
+        if not job:
+            return
+        if not path or not os.path.exists(path):
+            jobs.fail(db, job, "Fichier source introuvable pour la reprise : relance la vérification depuis la page.")
+            return
+        with open(path, "rb") as fh:
+            content = fh.read()
+    finally:
+        db.close()
+    run_file_job(job_id, content, p.get("filename", "upload.csv"), bool(p.get("save_to_db")),
+                 bool(p.get("include_risky")), p.get("use_smtp"))
 
 
 

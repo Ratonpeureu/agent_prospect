@@ -43,6 +43,7 @@ class ContactIn(BaseModel):
     last_name: str | None = None
     job_title: str | None = None
     phone: str | None = None
+    profile_url: str | None = None
     company_id: int | None = None
     verify: bool = False
 
@@ -63,6 +64,10 @@ class ContactOut(BaseModel):
     full_name: str | None
     job_title: str | None
     phone: str | None
+    profile_url: str | None = None
+    department: str | None = None
+    seniority: str | None = None
+    evidence: str | None = None
     company_id: int | None
     company_name: str | None
     source: str | None
@@ -105,6 +110,11 @@ class SearchRequest(BaseModel):
     discover_emails: bool = True
     verify: bool = True
     use_smtp: bool | None = None
+    find_people: bool = True
+    person_titles: list[str] = Field([], description="Mots-clés de poste (ex. directeur, achats, marketing)")
+    person_levels: list[Literal["c_level", "director", "manager", "staff"]] = []
+    person_departments: list[str] = []
+    people_sources: list[str] = Field(["website", "registry"], description="website | registry | web | profiles | github")
 
     @model_validator(mode="after")
     def _normalize(self):

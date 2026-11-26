@@ -16,6 +16,17 @@ const NEEDS_COUNTRY = new Set(["wikidata", "opencorporates", "worldbank", "ted",
 
 const MAX_COMBOS = 100;
 
+
+const LEVELS = [["c_level", "Dirigeants (PDG, DG, gérant, fondateur)"], ["director", "Directeurs"], ["manager", "Managers / responsables"], ["staff", "Équipe"]];
+const DEPTS = [["direction", "Direction"], ["commercial", "Commercial"], ["marketing", "Marketing / Com"], ["finance", "Finance / Compta"], ["rh", "RH"], ["it", "IT / Tech"], ["operations", "Opérations"], ["achats", "Achats"], ["juridique", "Juridique"]];
+const PEOPLE_SOURCES = [
+  ["website", "Pages équipe / contact des sites", "Rapide : noms, postes, emails publiés, profils liés."],
+  ["registry", "Dirigeants des registres officiels", "FR et UK : dirigeants personnes physiques."],
+  ["web", "Emails exposés ailleurs sur le web", "Via DuckDuckGo : lent, peut être limité."],
+  ["profiles", "Profils via moteur de recherche", "Nom, poste et lien de profil lus dans les titres de résultats. Lent, indicatif."],
+  ["github", "GitHub (emails publics)", "Expérimental, utile surtout pour les sociétés tech."],
+];
+
 const GROUPS = {
   "Afrique de l'Ouest": ["SN", "CI", "ML", "BF", "NE", "GN", "TG", "BJ", "MR", "GM"],
   "Afrique centrale": ["CM", "GA", "CG", "CD", "TD", "CF"],
@@ -26,6 +37,7 @@ const GROUPS = {
 const DEFAULT = {
   queries: [], location: "", countries: [], sources: ["auto"], exclude_sources: [], limit: 50, filters: {},
   enrich_websites: true, discover_emails: true, verify: true, use_smtp: "",
+  find_people: true, person_titles: "", person_levels: [], person_departments: [], people_sources: ["website", "registry"],
 };
 
 const filtersToRaw = (f = {}) =>
@@ -68,6 +80,7 @@ export default function Search() {
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const setFilter = (k, v) => setForm((f) => ({ ...f, filters: { ...f.filters, [k]: v } }));
   const auto = form.sources.includes("auto");
+  const toggleIn = (k, v) => setForm((f) => ({ ...f, [k]: f[k].includes(v) ? f[k].filter((x) => x !== v) : [...f[k], v] }));
 
   // ---- mots-clés (plusieurs) ----
   const addKw = (raw) => {
@@ -135,6 +148,10 @@ export default function Search() {
       limit: Number(form.limit) || 50, filters,
       enrich_websites: form.enrich_websites, discover_emails: form.discover_emails, verify: form.verify,
       use_smtp: form.use_smtp === "" ? null : form.use_smtp === "true",
+      find_people: form.find_people,
+      person_titles: String(form.person_titles).split(",").map((s) => s.trim()).filter(Boolean),
+      person_levels: form.person_levels, person_departments: form.person_departments,
+      people_sources: form.people_sources.length ? form.people_sources : ["website"],
     };
     setBusy(true);
     try {
@@ -160,6 +177,9 @@ export default function Search() {
       exclude_sources: p.exclude_sources || [],
       location: p.location || "", use_smtp: p.use_smtp == null ? "" : String(p.use_smtp),
       filters: filtersToRaw(p.filters),
+      person_titles: (p.person_titles || []).join(", "),
+      person_levels: p.person_levels || [], person_departments: p.person_departments || [],
+      people_sources: p.people_sources || ["website", "registry"], find_people: p.find_people ?? true,
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -247,6 +267,12 @@ export default function Search() {
             </div>
             <p className="text-xs text-muted">Clique une carte pour la choisir. « Ignorer » l'exclut de la recherche, même en mode Auto.</p>
             {sources.loading && <Spinner />}
+            {sources.error && (
+              <div className="flex items-center gap-2 rounded-xl bg-bad/10 p-3 text-sm text-bad">
+                <AlertTriangle size={16} /> Impossible de charger les sources : {sources.error.message}
+                <button type="button" className="ml-auto underline" onClick={sources.reload}>Réessayer</button>
+              </div>
+            )}
             <div className="grid gap-3 sm:grid-cols-2">
               {(sources.data || []).map((p) => {
                 const covered = supports(p);
@@ -290,7 +316,7 @@ export default function Search() {
                 );
               })}
             </div>
-            {active.length === 0 && (
+            {!sources.error && !sources.loading && active.length === 0 && (
               <div className="flex items-center gap-2 rounded-xl bg-warn/10 p-3 text-sm text-warn">
                 <AlertTriangle size={16} /> Aucune source active : ajoute un pays, retire une exclusion ou sélectionne des sources manuellement.
               </div>
@@ -344,6 +370,51 @@ export default function Search() {
                 <option value="">Selon la configuration</option><option value="true">Forcer activé</option><option value="false">Forcer désactivé</option>
               </select>
             </Field>
+          </div>
+
+          {/* 5. Personnes */}
+          <div className="card space-y-4 p-5">
+            <h2 className="font-semibold">5. Personnes (décideurs, profils)</h2>
+            <Toggle checked={form.find_people} onChange={(v) => set("find_people", v)} label="Rechercher les personnes de chaque entreprise"
+              hint="Nom, poste, email, téléphone, profil. Sources publiques uniquement. Un email est déduit seulement s'il est confirmé par SMTP ou calqué sur le format réel du domaine (« Risqué »)." />
+            {form.find_people && (
+              <>
+                <Field label="Postes recherchés (mots-clés séparés par des virgules)" hint="Ex : directeur, achats, marketing, responsable. Vide = tous les postes trouvés.">
+                  <input className="input" placeholder="directeur, responsable achats, dsi…" value={form.person_titles} onChange={(e) => set("person_titles", e.target.value)} />
+                </Field>
+                <div>
+                  <div className="mb-2 text-xs font-medium text-muted">Niveau (vide = tous)</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {LEVELS.map(([k, l]) => (
+                      <button type="button" key={k} onClick={() => toggleIn("person_levels", k)}
+                        className={`rounded-full border px-3 py-1 text-xs transition ${form.person_levels.includes(k) ? "border-brand bg-brand/10 text-brand" : "border-line hover:bg-soft"}`}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-2 text-xs font-medium text-muted">Département (vide = tous)</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {DEPTS.map(([k, l]) => (
+                      <button type="button" key={k} onClick={() => toggleIn("person_departments", k)}
+                        className={`rounded-full border px-3 py-1 text-xs transition ${form.person_departments.includes(k) ? "border-brand bg-brand/10 text-brand" : "border-line hover:bg-soft"}`}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-2 text-xs font-medium text-muted">Où chercher les personnes</div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {PEOPLE_SOURCES.map(([k, l, h]) => (
+                      <div key={k} role="button" tabIndex={0} onClick={() => toggleIn("people_sources", k)}
+                        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggleIn("people_sources", k)}
+                        className={`cursor-pointer rounded-xl border p-3 text-left transition ${form.people_sources.includes(k) ? "border-brand bg-brand/5" : "border-line hover:bg-soft"}`}>
+                        <div className="text-sm font-medium">{l}</div>
+                        <div className="text-xs text-muted">{h}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           <button className="btn btn-primary w-full py-3 text-base" onClick={submit} disabled={busy || active.length === 0 || tooMany}>

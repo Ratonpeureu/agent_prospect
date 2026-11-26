@@ -108,7 +108,8 @@ def upsert_contact(db: Session, data: dict, bl: BlacklistSets) -> tuple[Contact 
 
     contact = db.execute(select(Contact).where(Contact.email == email)).scalar_one_or_none()
     if contact:
-        for f in ("first_name", "last_name", "full_name", "job_title", "phone", "company_id"):
+        for f in ("first_name", "last_name", "full_name", "job_title", "phone", "company_id",
+                  "profile_url", "department", "seniority", "evidence"):
             if not getattr(contact, f) and data.get(f):
                 setattr(contact, f, data[f])
         db.flush()
@@ -123,6 +124,8 @@ def upsert_contact(db: Session, data: dict, bl: BlacklistSets) -> tuple[Contact 
         email=email, first_name=first, last_name=last, full_name=full,
         job_title=data.get("job_title"), phone=data.get("phone"),
         company_id=data.get("company_id"), source=data.get("source"),
+        profile_url=data.get("profile_url"), department=data.get("department"),
+        seniority=data.get("seniority"), evidence=data.get("evidence"),
     )
     db.add(contact)
     db.flush()

@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { ChevronDown, Download, ListChecks } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronDown, Download, ListChecks, RotateCw } from "lucide-react";
 import { api } from "../lib/api";
-import { useAsync, usePoll } from "../lib/hooks";
+import { useActiveJobs, useAsync, usePoll } from "../lib/hooks";
 import { KIND_LABEL, fmtDate } from "../lib/format";
 import { Empty, PageHeader, Spinner } from "../components/ui";
 import { JobResult, JobStatus } from "../components/JobCard";
@@ -9,11 +9,22 @@ import { useToast } from "../components/Toast";
 
 export default function Jobs() {
   const toast = useToast();
-  const list = useAsync(() => api.get("/api/jobs", { limit: 100 }), []);
+  const list = useAsync(() => api.get("/api/jobs", { limit: 50 }), []);
+  const { running } = useActiveJobs();
   const [open, setOpen] = useState(null);
   const jobs = list.data || [];
-  const running = jobs.some((j) => j.status === "running" || j.status === "queued");
-  usePoll(list.reload, 3000, running);
+
+  usePoll(list.reload, 8000, running > 0);               // plus de rafale : 8 s, seulement si une tâche tourne
+  useEffect(() => { list.reload(); }, [running]);         // eslint-disable-line react-hooks/exhaustive-deps
+
+  const canResume = (j) => j.status === "error" || j.stalled || ((j.status === "running" || j.status === "queued") && !j.alive);
+  const resume = async (j) => {
+    try {
+      await api.post(`/api/jobs/${j.id}/resume`);
+      toast.info(`Tâche #${j.id} relancée au dernier point d'avancement`);
+      setTimeout(list.reload, 1000);
+    } catch (e) { toast.error(e.message); }
+  };
 
   return (
     <>
@@ -27,22 +38,29 @@ export default function Jobs() {
                   <div className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-soft/50" onClick={() => setOpen(open === j.id ? null : j.id)}>
                     <ChevronDown size={16} className={`text-muted transition ${open === j.id ? "rotate-180" : ""}`} />
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{KIND_LABEL[j.kind] || j.kind} <span className="text-muted">#{j.id}</span></div>
+                      <div className="truncate text-sm font-medium">{KIND_LABEL[j.kind] || j.kind} <span className="text-muted">#{j.id}</span>{j.attempts > 1 && <span className="ml-2 text-xs text-warn">reprise ×{j.attempts - 1}</span>}</div>
                       <div className="truncate text-xs text-muted">
                         {fmtDate(j.created_at)}
                         {j.kind === "search" && ` · ${[(j.params?.queries?.length ? j.params.queries : [j.params?.query]).filter(Boolean).join(", "), j.params?.location, (j.params?.countries?.length ? j.params.countries : [j.params?.country]).filter(Boolean).join(", ")].filter(Boolean).join(" · ")}`}
                         {j.kind === "verify_file" && ` · ${j.params?.filename || ""}`}
+                        {(j.status === "running" || j.status === "queued") && j.progress?.message && ` · ${j.progress.message}${j.progress.percent != null ? ` (${j.progress.percent} %)` : ""}`}
                       </div>
                     </div>
+                    {canResume(j) && (
+                      <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); resume(j); }}>
+                        <RotateCw size={13} /> Reprendre
+                      </button>
+                    )}
                     {j.has_file && (
                       <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); api.download(`/api/jobs/${j.id}/download`).catch((er) => toast.error(er.message)); }}>
                         <Download size={13} /> Excel
                       </button>
                     )}
-                    <JobStatus status={j.status} />
+                    <JobStatus status={j.status} stalled={j.stalled} />
                   </div>
                   {open === j.id && (
                     <div className="space-y-3 border-t border-line bg-soft/40 px-5 py-4">
+                      {j.step && <div className="text-xs text-muted">Étape en cours : {j.step}</div>}
                       {j.error && <div className="break-all rounded-xl bg-bad/10 p-3 text-sm text-bad">{j.error}</div>}
                       {j.result && <JobResult result={j.result} />}
                       <details className="text-xs text-muted">
