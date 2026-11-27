@@ -1,7 +1,6 @@
-//bon fait en moi un file pdf//modern/avec dezcriptif/simplet de ce qu'il permet pour chaque screenshot//////n'invente rien suppose rien//
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, Ban, ChevronDown, Download, History, Radar, Rocket, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, Ban, Check, ChevronDown, Download, History, Plus, Radar, Rocket, X } from "lucide-react";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { COUNTRIES, countryName } from "../lib/countries";
@@ -13,11 +12,9 @@ import { useToast } from "../components/Toast";
 const LIST_KEYS = new Set(["osm_tags", "naf", "sic_codes", "signals"]);
 const BOOL_KEYS = new Set(["officers", "ess", "siege_only", "include_institutions"]);
 const NEEDS_COUNTRY = new Set(["wikidata", "opencorporates", "worldbank", "ted", "common_crawl", "gdelt"]);
-
 const MAX_COMBOS = 100;
 
-
-const LEVELS = [["c_level", "Dirigeants (PDG, DG, gérant, fondateur)"], ["director", "Directeurs"], ["manager", "Managers / responsables"], ["staff", "Équipe"]];
+const LEVELS = [["c_level", "Dirigeants"], ["director", "Directeurs"], ["manager", "Managers"], ["staff", "Équipe"]];
 const DEPTS = [["direction", "Direction"], ["commercial", "Commercial"], ["marketing", "Marketing / Com"], ["finance", "Finance / Compta"], ["rh", "RH"], ["it", "IT / Tech"], ["operations", "Opérations"], ["achats", "Achats"], ["juridique", "Juridique"]];
 const PEOPLE_SOURCES = [
   ["website", "Pages équipe / contact des sites", "Rapide : noms, postes, emails publiés, profils liés."],
@@ -33,6 +30,12 @@ const GROUPS = {
   Maghreb: ["MA", "DZ", "TN"],
   Europe: ["FR", "BE", "CH", "LU", "GB"],
 };
+
+const STEPS = [
+  { id: 0, label: "Critères", title: "Que cherches-tu ?" },
+  { id: 1, label: "Sources", title: "Où chercher ?" },
+  { id: 2, label: "Emails & décideurs", title: "Que veux-tu récupérer ?" },
+];
 
 const DEFAULT = {
   queries: [], location: "", countries: [], sources: ["auto"], exclude_sources: [], limit: 50, filters: {},
@@ -56,12 +59,23 @@ function Chips({ items, label = (v) => v, onRemove, tone = "brand" }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {items.map((v) => (
-        <span key={v} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${cls}`}>
+        <span key={v} className={`inline-flex animate-drop items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium ${cls}`}>
           {label(v)}
-          <button type="button" aria-label="Retirer" onClick={() => onRemove(v)}><X size={12} /></button>
+          <button type="button" aria-label="Retirer" className="opacity-70 transition hover:opacity-100" onClick={() => onRemove(v)}><X size={13} /></button>
         </span>
       ))}
     </div>
+  );
+}
+
+function Pill({ on, onClick, children }) {
+  return (
+    <button
+      type="button" onClick={onClick}
+      className={`rounded-md border px-2.5 py-1 text-xs transition active:scale-[0.97] ${on ? "border-brand/50 bg-brand/10 font-semibold text-brand" : "border-line text-muted hover:bg-soft hover:text-fg"}`}
+    >
+      {on && <Check size={12} className="mr-1 inline" />}{children}
+    </button>
   );
 }
 
@@ -71,7 +85,8 @@ export default function Search() {
   const [kw, setKw] = useState("");
   const [jobId, setJobId] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [openFilters, setOpenFilters] = useState(true);
+  const [openFilters, setOpenFilters] = useState(false);
+  const [step, setStep] = useState(0);
 
   const sources = useAsync(() => api.get("/api/sources"), []);
   const presets = useAsync(() => api.get("/api/presets"), []);
@@ -104,7 +119,6 @@ export default function Search() {
     () => (sources.data || []).filter((p) =>
       !form.exclude_sources.includes(p.name) &&
       (auto ? supports(p) && p.configured && p.auto !== false : form.sources.includes(p.name))),
-
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [sources.data, form.sources, form.countries, form.exclude_sources]
   );
@@ -126,7 +140,9 @@ export default function Search() {
   };
 
   const pending = kw.trim() ? 1 : 0;
-  const combos = Math.max(1, form.queries.length + pending) * Math.max(1, form.countries.length);
+  const nKw = Math.max(1, form.queries.length + pending);
+  const nCountries = Math.max(1, form.countries.length);
+  const combos = nKw * nCountries;
   const tooMany = combos > MAX_COMBOS;
   const noCountryWarn = !form.countries.length && active.some((p) => NEEDS_COUNTRY.has(p.name));
 
@@ -181,250 +197,345 @@ export default function Search() {
       person_levels: p.person_levels || [], person_departments: p.person_departments || [],
       people_sources: p.people_sources || ["website", "registry"], find_people: p.find_people ?? true,
     });
+    setStep(0);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const searches = (recent.data || []).filter((j) => j.kind === "search").slice(0, 8);
+  const searches = (recent.data || []).filter((j) => j.kind === "search").slice(0, 6);
+  const levelLabel = Object.fromEntries(LEVELS);
+  const deptLabel = Object.fromEntries(DEPTS);
+  const peopleSummary = form.find_people
+    ? [...form.person_levels.map((l) => levelLabel[l]), ...form.person_departments.map((d) => deptLabel[d])].join(", ") || "Tous les postes"
+    : "Désactivé";
+  const filtersShown = active.filter((p) => Object.keys(p.filters || {}).length);
 
   return (
     <>
-      <PageHeader title="Prospection" subtitle="Interroge plusieurs sources ouvertes en parallèle, puis enrichis et vérifie les emails" />
+      <PageHeader title="Nouvelle prospection" subtitle="Interroge plusieurs sources ouvertes en parallèle, puis enrichit et vérifie les emails" />
 
-      <div className="grid gap-6 xl:grid-cols-5">
-        <div className="space-y-5 xl:col-span-3">
-          {/* 1. Critères */}
-          <div className="card space-y-4 p-5">
-            <h2 className="font-semibold">1. Critères</h2>
-
-            <Field label="Secteurs / mots-clés (Entrée ou virgule pour en ajouter plusieurs)">
-              <input
-                className="input" placeholder="informatique, banque, restaurant…" value={kw}
-                onChange={(e) => setKw(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addKw(kw); } }}
-                onBlur={() => kw.trim() && addKw(kw)}
-              />
-            </Field>
-            <Chips items={form.queries} onRemove={toggleKw} />
-
-            {presets.data && (
-              <div>
-                <div className="mb-2 text-xs font-medium text-muted">Secteurs prédéfinis (cliquer pour ajouter / retirer, traduits en tags OSM / codes NAF / SIC)</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {presets.data.map((p) => {
-                    const on = form.queries.includes(p.aliases[0]);
-                    return (
-                      <button
-                        type="button" key={p.id} onClick={() => toggleKw(p.aliases[0])}
-                        className={`rounded-full border px-3 py-1 text-xs transition ${on ? "border-brand bg-brand/10 text-brand" : "border-line hover:bg-soft"}`}
-                      >
-                        {p.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            <Field label="Pays (plusieurs possibles)">
-              <select className="input" value="" onChange={(e) => e.target.value && addCountries([e.target.value])}>
-                <option value="">Ajouter un pays…</option>
-                {COUNTRIES.filter(([c]) => !form.countries.includes(c)).map(([c, n]) => <option key={c} value={c}>{n} ({c})</option>)}
-              </select>
-            </Field>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {Object.entries(GROUPS).map(([g, codes]) => (
-                <button type="button" key={g} onClick={() => addCountries(codes)} className="rounded-full border border-line px-3 py-1 text-xs hover:bg-soft">+ {g}</button>
-              ))}
-              {form.countries.length > 0 && <button type="button" onClick={() => set("countries", [])} className="px-2 text-xs text-bad">Tout retirer</button>}
-            </div>
-            <Chips items={form.countries} label={countryName} onRemove={removeCountry} />
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Ville / zone (appliquée à tous les pays)">
-                <input className="input" placeholder="Dakar, Lyon, 75, London…" value={form.location} onChange={(e) => set("location", e.target.value)} />
-              </Field>
-              <Field label="Résultats max. par source et par combinaison">
-                <input type="number" min="1" max="500" className="input" value={form.limit} onChange={(e) => set("limit", e.target.value)} />
-              </Field>
-            </div>
-
-            <div className={`rounded-xl p-3 text-xs ${tooMany ? "bg-bad/10 text-bad" : "bg-soft text-muted"}`}>
-              {Math.max(1, form.queries.length + pending)} mot(s)-clé(s) × {Math.max(1, form.countries.length)} pays = <b>{combos}</b> combinaison(s) par source
-              {tooMany && ` : maximum ${MAX_COMBOS}, réduis la sélection.`}
-            </div>
+      <div className="grid items-start gap-6 xl:grid-cols-3">
+        {/* ============ Colonne principale ============ */}
+        <div className="space-y-4 xl:col-span-2">
+          {/* Navigation par étapes */}
+          <div className="card flex flex-wrap items-center gap-1 p-1.5">
+            {STEPS.map((s) => {
+              const cur = step === s.id;
+              const done = step > s.id;
+              return (
+                <button
+                  key={s.id} type="button" onClick={() => setStep(s.id)}
+                  className={`flex min-w-[140px] flex-1 items-center gap-2.5 rounded-md px-3 py-2 text-left transition ${cur ? "bg-brand/10" : "hover:bg-soft"}`}
+                >
+                  <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-semibold transition ${cur ? "bg-brand text-brand-fg" : done ? "bg-ok/15 text-ok" : "border border-line bg-soft text-muted"}`}>
+                    {done ? <Check size={13} /> : s.id + 1}
+                  </span>
+                  <span className={`truncate text-sm ${cur ? "font-semibold text-brand" : "text-muted"}`}>{s.label}</span>
+                </button>
+              );
+            })}
           </div>
 
-          {/* 2. Sources */}
-          <div className="card space-y-4 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-semibold">2. Sources de données</h2>
-              <button
-                type="button" onClick={() => set("sources", ["auto"])}
-                className={`rounded-full border px-3 py-1 text-xs ${auto ? "border-brand bg-brand/10 text-brand" : "border-line hover:bg-soft"}`}
-              >
-                ✨ Auto : toutes les sources adaptées aux pays
-              </button>
-            </div>
-            <p className="text-xs text-muted">Clique une carte pour la choisir. « Ignorer » l'exclut de la recherche, même en mode Auto.</p>
-            {sources.loading && <Spinner />}
-            {sources.error && (
-              <div className="flex items-center gap-2 rounded-xl bg-bad/10 p-3 text-sm text-bad">
-                <AlertTriangle size={16} /> Impossible de charger les sources : {sources.error.message}
-                <button type="button" className="ml-auto underline" onClick={sources.reload}>Réessayer</button>
-              </div>
-            )}
-            <div className="grid gap-3 sm:grid-cols-2">
-              {(sources.data || []).map((p) => {
-                const covered = supports(p);
-                const excluded = isExcluded(p.name);
-                const selected = !excluded && (auto ? covered && p.configured : form.sources.includes(p.name));
-                return (
-                  <div
-                    key={p.name} role="button" tabIndex={0}
-                    onClick={() => toggleSource(p.name)}
-                    onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggleSource(p.name)}
-                    className={`cursor-pointer rounded-2xl border p-3.5 text-left transition ${
-                      excluded ? "border-bad/40 bg-bad/5 opacity-70" : selected ? "border-brand bg-brand/5" : "border-line hover:bg-soft"
-                    } ${auto && !selected && !excluded ? "opacity-60" : ""}`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className={`text-sm font-semibold ${excluded ? "line-through" : ""}`}>{p.label}</span>
-                      <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${excluded ? "bg-bad" : selected ? "bg-brand" : "bg-line"}`} />
-                    </div>
-                    <p className="mt-1 text-xs text-muted">{p.description}</p>
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <Badge tone="info">{p.countries === "mondial" ? "Mondial" : p.countries.join(", ")}</Badge>
-                      {p.requires_key ? (
-                        p.configured ? <Badge tone="ok">Clé OK</Badge> : <Badge tone="warn">Clé manquante</Badge>
-                      ) : <Badge tone="ok">Sans clé</Badge>}
-                      {!covered && form.countries.length > 0 && <Badge tone="muted">Pays non couvert</Badge>}
-                      {excluded && <Badge tone="bad">Ignorée</Badge>}
-                    </div>
-                    <div className="mt-2 flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); toggleExclude(p.name); }}
-                        className={`inline-flex items-center gap-1 text-xs ${excluded ? "text-brand" : "text-bad"} hover:underline`}
-                      >
-                        <Ban size={12} /> {excluded ? "Réactiver" : "Ignorer"}
-                      </button>
-                      {p.requires_key && !p.configured && (
-                        <Link to="/settings" onClick={(e) => e.stopPropagation()} className="text-xs text-brand underline">Ajouter la clé</Link>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {!sources.error && !sources.loading && active.length === 0 && (
-              <div className="flex items-center gap-2 rounded-xl bg-warn/10 p-3 text-sm text-warn">
-                <AlertTriangle size={16} /> Aucune source active : ajoute un pays, retire une exclusion ou sélectionne des sources manuellement.
-              </div>
-            )}
-            {noCountryWarn && (
-              <div className="flex items-center gap-2 rounded-xl bg-warn/10 p-3 text-sm text-warn">
-                <AlertTriangle size={16} /> Wikidata et OpenCorporates nécessitent un pays : ils seront ignorés sans pays.
-              </div>
-            )}
-          </div>
+          <div key={step} className="card animate-fade space-y-6 p-6">
+            <h2 className="text-lg font-semibold">{STEPS[step].title}</h2>
 
-          {/* 3. Filtres avancés */}
-          <div className="card p-5">
-            <button type="button" className="flex w-full items-center justify-between" onClick={() => setOpenFilters(!openFilters)}>
-              <h2 className="font-semibold">3. Filtres avancés <span className="text-sm font-normal text-muted">(selon les sources actives)</span></h2>
-              <ChevronDown size={18} className={`transition ${openFilters ? "rotate-180" : ""}`} />
-            </button>
-            {openFilters && (
-              <div className="mt-4 space-y-5">
-                {active.filter((p) => Object.keys(p.filters || {}).length).map((p) => (
-                  <div key={p.name}>
-                    <div className="mb-2 text-sm font-medium">{p.label}</div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {Object.entries(p.filters).map(([k, help]) => (
-                        <Field key={k} label={k} hint={help}>
-                          {BOOL_KEYS.has(k) ? (
-                            <select className="input" value={form.filters[k] ?? ""} onChange={(e) => setFilter(k, e.target.value)}>
-                              <option value="">Par défaut</option><option value="true">Oui</option><option value="false">Non</option>
-                            </select>
-                          ) : (
-                            <input className="input" placeholder={LIST_KEYS.has(k) ? "valeur1, valeur2" : ""} value={form.filters[k] ?? ""} onChange={(e) => setFilter(k, e.target.value)} />
-                          )}
-                        </Field>
+            {/* ---------- Étape 1 : critères ---------- */}
+            {step === 0 && (
+              <>
+                <Field label="Secteurs / mots-clés" hint="Entrée ou virgule pour en ajouter plusieurs.">
+                  <input
+                    className="input h-11" placeholder="informatique, banque, restaurant…" value={kw}
+                    onChange={(e) => setKw(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addKw(kw); } }}
+                    onBlur={() => kw.trim() && addKw(kw)}
+                  />
+                </Field>
+                <Chips items={form.queries} onRemove={toggleKw} />
+
+                {presets.data && (
+                  <div>
+                    <div className="mb-2 text-xs font-semibold text-muted">Suggestions : un clic pour ajouter ou retirer</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {presets.data.map((p) => (
+                        <Pill key={p.id} on={form.queries.includes(p.aliases[0])} onClick={() => toggleKw(p.aliases[0])}>{p.label}</Pill>
                       ))}
                     </div>
                   </div>
-                ))}
-                {active.every((p) => !Object.keys(p.filters || {}).length) && <p className="text-sm text-muted">Aucun filtre disponible pour les sources actives.</p>}
-              </div>
-            )}
-          </div>
+                )}
 
-          {/* 4. Emails */}
-          <div className="card space-y-4 p-5">
-            <h2 className="font-semibold">4. Emails</h2>
-            <Toggle checked={form.enrich_websites} onChange={(v) => set("enrich_websites", v)} label="Lire les sites web (pages contact)" hint="Requêtes HTTP simples, sans navigateur : trouve emails et téléphones affichés en clair." />
-            <Toggle checked={form.discover_emails} onChange={(v) => set("discover_emails", v)} label="Découvrir des emails par patterns" hint="Teste contact@, info@, prenom.nom@… et ne garde que les adresses confirmées par SMTP." />
-            <Toggle checked={form.verify} onChange={(v) => set("verify", v)} label="Vérifier les emails trouvés" />
-            <Field label="Test SMTP">
-              <select className="input sm:w-64" value={form.use_smtp} onChange={(e) => set("use_smtp", e.target.value)}>
-                <option value="">Selon la configuration</option><option value="true">Forcer activé</option><option value="false">Forcer désactivé</option>
-              </select>
-            </Field>
-          </div>
+                <div className="h-px bg-line" />
 
-          {/* 5. Personnes */}
-          <div className="card space-y-4 p-5">
-            <h2 className="font-semibold">5. Personnes (décideurs, profils)</h2>
-            <Toggle checked={form.find_people} onChange={(v) => set("find_people", v)} label="Rechercher les personnes de chaque entreprise"
-              hint="Nom, poste, email, téléphone, profil. Sources publiques uniquement. Un email est déduit seulement s'il est confirmé par SMTP ou calqué sur le format réel du domaine (« Risqué »)." />
-            {form.find_people && (
-              <>
-                <Field label="Postes recherchés (mots-clés séparés par des virgules)" hint="Ex : directeur, achats, marketing, responsable. Vide = tous les postes trouvés.">
-                  <input className="input" placeholder="directeur, responsable achats, dsi…" value={form.person_titles} onChange={(e) => set("person_titles", e.target.value)} />
+                <Field label="Pays (plusieurs possibles)">
+                  <select className="input h-11" value="" onChange={(e) => e.target.value && addCountries([e.target.value])}>
+                    <option value="">Ajouter un pays…</option>
+                    {COUNTRIES.filter(([c]) => !form.countries.includes(c)).map(([c, n]) => <option key={c} value={c}>{n} ({c})</option>)}
+                  </select>
                 </Field>
-                <div>
-                  <div className="mb-2 text-xs font-medium text-muted">Niveau (vide = tous)</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {LEVELS.map(([k, l]) => (
-                      <button type="button" key={k} onClick={() => toggleIn("person_levels", k)}
-                        className={`rounded-full border px-3 py-1 text-xs transition ${form.person_levels.includes(k) ? "border-brand bg-brand/10 text-brand" : "border-line hover:bg-soft"}`}>{l}</button>
-                    ))}
-                  </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-muted">Raccourcis</span>
+                  {Object.entries(GROUPS).map(([g, codes]) => (
+                    <button type="button" key={g} onClick={() => addCountries(codes)} className="inline-flex items-center gap-1 rounded-md bg-soft px-2.5 py-1 text-xs font-semibold text-fg/80 ring-1 ring-inset ring-line transition hover:bg-brand/10 hover:text-brand">
+                      <Plus size={12} /> {g}
+                    </button>
+                  ))}
+                  {form.countries.length > 0 && <button type="button" onClick={() => set("countries", [])} className="px-2 text-xs font-semibold text-bad hover:underline">Tout retirer</button>}
                 </div>
-                <div>
-                  <div className="mb-2 text-xs font-medium text-muted">Département (vide = tous)</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {DEPTS.map(([k, l]) => (
-                      <button type="button" key={k} onClick={() => toggleIn("person_departments", k)}
-                        className={`rounded-full border px-3 py-1 text-xs transition ${form.person_departments.includes(k) ? "border-brand bg-brand/10 text-brand" : "border-line hover:bg-soft"}`}>{l}</button>
-                    ))}
-                  </div>
+                <Chips items={form.countries} label={countryName} onRemove={removeCountry} />
+
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <Field label="Ville / zone" className="sm:col-span-2" hint="Appliquée à tous les pays.">
+                    <input className="input" placeholder="Dakar, Lyon, 75, London…" value={form.location} onChange={(e) => set("location", e.target.value)} />
+                  </Field>
+                  <Field label="Résultats max." hint="Par source et par combinaison.">
+                    <input type="number" min="1" max="500" className="input" value={form.limit} onChange={(e) => set("limit", e.target.value)} />
+                  </Field>
                 </div>
-                <div>
-                  <div className="mb-2 text-xs font-medium text-muted">Où chercher les personnes</div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {PEOPLE_SOURCES.map(([k, l, h]) => (
-                      <div key={k} role="button" tabIndex={0} onClick={() => toggleIn("people_sources", k)}
-                        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggleIn("people_sources", k)}
-                        className={`cursor-pointer rounded-xl border p-3 text-left transition ${form.people_sources.includes(k) ? "border-brand bg-brand/5" : "border-line hover:bg-soft"}`}>
-                        <div className="text-sm font-medium">{l}</div>
-                        <div className="text-xs text-muted">{h}</div>
-                      </div>
-                    ))}
-                  </div>
+
+                <div className={`flex items-center gap-2 rounded-md px-3 py-2.5 text-sm transition ${tooMany ? "bg-bad/10 text-bad" : "bg-brand/10 text-brand"}`}>
+                  {nKw} mot(s)-clé(s) × {nCountries} pays = <b>{combos}</b> combinaison(s) par source
+                  {tooMany && ` · maximum ${MAX_COMBOS}, réduis la sélection.`}
                 </div>
               </>
             )}
-          </div>
 
-          <button className="btn btn-primary w-full py-3 text-base" onClick={submit} disabled={busy || active.length === 0 || tooMany}>
-            {busy ? <Spinner /> : <Rocket size={18} />} Lancer la prospection
-          </button>
+            {/* ---------- Étape 2 : sources ---------- */}
+            {step === 1 && (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="max-w-md text-sm text-muted">Clique une carte pour la choisir. « Ignorer » l'exclut de la recherche, même en mode Auto.</p>
+                  <button
+                    type="button" onClick={() => set("sources", ["auto"])}
+                    className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition active:scale-[0.97] ${auto ? "border-brand/50 bg-brand/10 text-brand" : "border-line hover:bg-soft"}`}
+                  >
+                    ✨ Auto : sources adaptées aux pays
+                  </button>
+                </div>
+
+                {sources.loading && <Spinner />}
+                {sources.error && (
+                  <div className="flex items-center gap-2 rounded-md bg-bad/10 p-3 text-sm text-bad">
+                    <AlertTriangle size={16} /> Impossible de charger les sources : {sources.error.message}
+                    <button type="button" className="ml-auto underline" onClick={sources.reload}>Réessayer</button>
+                  </div>
+                )}
+
+                <div className="grid gap-2.5 sm:grid-cols-2">
+                  {(sources.data || []).map((p) => {
+                    const covered = supports(p);
+                    const excluded = isExcluded(p.name);
+                    const selected = !excluded && (auto ? covered && p.configured : form.sources.includes(p.name));
+                    return (
+                      <div
+                        key={p.name} role="button" tabIndex={0}
+                        onClick={() => toggleSource(p.name)}
+                        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggleSource(p.name)}
+                        className={`flex cursor-pointer gap-3 rounded-lg border p-3.5 text-left transition hover:shadow-card active:scale-[0.99] ${
+                          excluded ? "border-bad/40 bg-bad/5 opacity-70" : selected ? "border-brand/60 bg-brand/5" : "border-line hover:bg-soft"
+                        } ${auto && !selected && !excluded ? "opacity-60" : ""}`}
+                      >
+                        <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-sm border transition ${excluded ? "border-bad bg-bad text-white" : selected ? "border-brand bg-brand text-brand-fg" : "border-line bg-surface"}`}>
+                          {selected && <Check size={11} strokeWidth={3.5} />}
+                          {excluded && <X size={11} strokeWidth={3.5} />}
+                        </span>
+                        <div className="min-w-0 grow">
+                          <div className={`text-sm font-semibold ${excluded ? "line-through" : ""}`}>{p.label}</div>
+                          <p className="mt-0.5 line-clamp-2 text-xs text-muted">{p.description}</p>
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            <Badge tone="info">{p.countries === "mondial" ? "Mondial" : p.countries.join(", ")}</Badge>
+                            {p.requires_key ? (
+                              p.configured ? <Badge tone="ok">Clé OK</Badge> : <Badge tone="warn">Clé manquante</Badge>
+                            ) : <Badge tone="ok">Sans clé</Badge>}
+                            {!covered && form.countries.length > 0 && <Badge tone="muted">Pays non couvert</Badge>}
+                            {excluded && <Badge tone="bad">Ignorée</Badge>}
+                          </div>
+                          <div className="mt-2 flex items-center gap-3">
+                            <button
+                              type="button" onClick={(e) => { e.stopPropagation(); toggleExclude(p.name); }}
+                              className={`inline-flex items-center gap-1 text-xs font-semibold ${excluded ? "text-brand" : "text-bad"} hover:underline`}
+                            >
+                              <Ban size={12} /> {excluded ? "Réactiver" : "Ignorer"}
+                            </button>
+                            {p.requires_key && !p.configured && (
+                              <Link to="/settings" onClick={(e) => e.stopPropagation()} className="text-xs font-semibold text-brand underline">Ajouter la clé</Link>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {!sources.error && !sources.loading && active.length === 0 && (
+                  <div className="flex items-center gap-2 rounded-md bg-warn/10 p-3 text-sm text-warn">
+                    <AlertTriangle size={16} /> Aucune source active : ajoute un pays, retire une exclusion ou sélectionne des sources manuellement.
+                  </div>
+                )}
+                {noCountryWarn && (
+                  <div className="flex items-center gap-2 rounded-md bg-warn/10 p-3 text-sm text-warn">
+                    <AlertTriangle size={16} /> Wikidata, OpenCorporates et d'autres sources nécessitent un pays : elles seront ignorées sans pays.
+                  </div>
+                )}
+
+                {/* Filtres avancés (repliés) */}
+                <div className="rounded-lg border border-line">
+                  <button type="button" className="flex w-full items-center justify-between px-4 py-3 text-left" onClick={() => setOpenFilters(!openFilters)}>
+                    <span>
+                      <span className="text-sm font-semibold">Filtres avancés</span>
+                      <span className="ml-2 text-xs text-muted">optionnel · selon les sources actives</span>
+                    </span>
+                    <ChevronDown size={18} className={`text-muted transition ${openFilters ? "rotate-180" : ""}`} />
+                  </button>
+                  {openFilters && (
+                    <div className="animate-drop space-y-5 border-t border-line p-4">
+                      {filtersShown.map((p) => (
+                        <div key={p.name}>
+                          <div className="mb-2 text-sm font-semibold">{p.label}</div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {Object.entries(p.filters).map(([k, help]) => (
+                              <Field key={k} label={k} hint={help}>
+                                {BOOL_KEYS.has(k) ? (
+                                  <select className="input" value={form.filters[k] ?? ""} onChange={(e) => setFilter(k, e.target.value)}>
+                                    <option value="">Par défaut</option><option value="true">Oui</option><option value="false">Non</option>
+                                  </select>
+                                ) : (
+                                  <input className="input" placeholder={LIST_KEYS.has(k) ? "valeur1, valeur2" : ""} value={form.filters[k] ?? ""} onChange={(e) => setFilter(k, e.target.value)} />
+                                )}
+                              </Field>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      {filtersShown.length === 0 && <p className="text-sm text-muted">Aucun filtre disponible pour les sources actives.</p>}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* ---------- Étape 3 : emails & décideurs ---------- */}
+            {step === 2 && (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {[
+                    ["enrich_websites", "Lire les sites web", "Pages contact : emails et téléphones affichés en clair (requêtes HTTP simples)."],
+                    ["discover_emails", "Découvrir par patterns", "Teste contact@, info@, prenom.nom@… et ne garde que les adresses confirmées par SMTP."],
+                    ["verify", "Vérifier les emails trouvés", "Contrôle de chaque adresse après la collecte."],
+                  ].map(([k, l, h]) => (
+                    <div key={k} className={`rounded-lg border p-3.5 transition ${form[k] ? "border-brand/40 bg-brand/5" : "border-line bg-soft"}`}>
+                      <Toggle checked={form[k]} onChange={(v) => set(k, v)} label={l} hint={h} />
+                    </div>
+                  ))}
+                  <div className="rounded-lg border border-line bg-soft p-3.5">
+                    <Field label="Test SMTP">
+                      <select className="input" value={form.use_smtp} onChange={(e) => set("use_smtp", e.target.value)}>
+                        <option value="">Selon la configuration</option><option value="true">Forcer activé</option><option value="false">Forcer désactivé</option>
+                      </select>
+                    </Field>
+                  </div>
+                </div>
+
+                <div className="h-px bg-line" />
+
+                <div className={`rounded-lg border p-3.5 transition ${form.find_people ? "border-brand/40 bg-brand/5" : "border-line bg-soft"}`}>
+                  <Toggle
+                    checked={form.find_people} onChange={(v) => set("find_people", v)} label="Rechercher les personnes de chaque entreprise"
+                    hint="Nom, poste, email, téléphone, profil. Sources publiques uniquement. Un email est déduit seulement s'il est confirmé par SMTP ou calqué sur le format réel du domaine (« Risqué »)."
+                  />
+                </div>
+
+                {form.find_people && (
+                  <div className="animate-drop space-y-5">
+                    <Field label="Postes recherchés" hint="Mots-clés séparés par des virgules. Vide = tous les postes trouvés.">
+                      <input className="input" placeholder="directeur, responsable achats, dsi…" value={form.person_titles} onChange={(e) => set("person_titles", e.target.value)} />
+                    </Field>
+                    <div>
+                      <div className="mb-2 text-xs font-semibold text-muted">Niveau (vide = tous)</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {LEVELS.map(([k, l]) => <Pill key={k} on={form.person_levels.includes(k)} onClick={() => toggleIn("person_levels", k)}>{l}</Pill>)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="mb-2 text-xs font-semibold text-muted">Département (vide = tous)</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {DEPTS.map(([k, l]) => <Pill key={k} on={form.person_departments.includes(k)} onClick={() => toggleIn("person_departments", k)}>{l}</Pill>)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="mb-2 text-xs font-semibold text-muted">Où chercher les personnes</div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {PEOPLE_SOURCES.map(([k, l, h]) => {
+                          const on = form.people_sources.includes(k);
+                          return (
+                            <div
+                              key={k} role="button" tabIndex={0} onClick={() => toggleIn("people_sources", k)}
+                              onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggleIn("people_sources", k)}
+                              className={`flex cursor-pointer gap-3 rounded-lg border p-3 transition active:scale-[0.99] ${on ? "border-brand/60 bg-brand/5" : "border-line hover:bg-soft"}`}
+                            >
+                              <span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-sm border transition ${on ? "border-brand bg-brand text-brand-fg" : "border-line bg-surface"}`}>
+                                {on && <Check size={11} strokeWidth={3.5} />}
+                              </span>
+                              <div>
+                                <div className="text-sm font-semibold">{l}</div>
+                                <div className="text-xs text-muted">{h}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Navigation entre étapes */}
+            <div className="flex items-center justify-between border-t border-line pt-4">
+              <button type="button" className="btn btn-ghost" disabled={step === 0} onClick={() => setStep(step - 1)}><ArrowLeft size={15} /> Précédent</button>
+              {step < STEPS.length - 1
+                ? <button type="button" className="btn btn-primary" onClick={() => setStep(step + 1)}>Suivant <ArrowRight size={15} /></button>
+                : <button type="button" className="btn btn-primary" onClick={submit} disabled={busy || active.length === 0 || tooMany}>{busy ? <Spinner /> : <Rocket size={16} />} Lancer la prospection</button>}
+            </div>
+          </div>
         </div>
 
-        {/* Résultats */}
-        <div className="space-y-5 xl:col-span-2">
-          {jobId ? (
+        {/* ============ Colonne droite ============ */}
+        <aside className="space-y-4 xl:sticky xl:top-4">
+          <div className="rounded-lg bg-ink-950 p-5 text-white shadow-pop">
+            <div className="mb-4 flex items-center gap-2">
+              <Radar size={18} className="text-brand-300" />
+              <h2 className="text-base font-semibold">Récapitulatif</h2>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[[combos * active.length, "requêtes"], [active.length, "sources"], [form.countries.length, "pays"]].map(([v, l]) => (
+                <div key={l} className="rounded-md bg-ink-900 px-3 py-3">
+                  <div className="text-xl font-semibold tabular-nums">{v}</div>
+                  <div className="text-xs text-ink-400">{l}</div>
+                </div>
+              ))}
+            </div>
+            <dl className="mt-4 space-y-2 text-sm">
+              {[
+                ["Secteurs", [...form.queries, ...(kw.trim() ? [kw.trim()] : [])].join(", ") || "—"],
+                ["Pays", form.countries.map(countryName).join(", ") || "—"],
+                ["Zone", form.location.trim() || "—"],
+                ["Décideurs", peopleSummary],
+              ].map(([k, v]) => (
+                <div key={k} className="flex items-start justify-between gap-4">
+                  <dt className="shrink-0 text-ink-400">{k}</dt>
+                  <dd className="line-clamp-2 text-right font-semibold">{v}</dd>
+                </div>
+              ))}
+            </dl>
+            <button
+              type="button" onClick={submit} disabled={busy || active.length === 0 || tooMany}
+              className="mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-brand-600 text-sm font-semibold text-white transition hover:bg-brand-400 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busy ? <Spinner /> : <Rocket size={16} />} Lancer la prospection
+            </button>
+            {tooMany && <p className="mt-2 text-center text-xs text-bad">Trop de combinaisons (max {MAX_COMBOS}).</p>}
+            <p className="mt-3 text-center text-xs text-ink-500">La tâche continue sur le serveur : tu peux quitter la page.</p>
+          </div>
+
+          {jobId && (
             <JobCard
               jobId={jobId}
               onDone={recent.reload}
@@ -440,34 +551,26 @@ export default function Search() {
                 )
               }
             />
-          ) : (
-            <div className="card grid place-items-center p-10 text-center">
-              <div className="mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-brand/10 text-brand"><Radar size={26} /></div>
-              <div className="font-semibold">Prêt à prospecter</div>
-              <p className="mt-1 max-w-xs text-sm text-muted">Renseigne tes critères puis lance la recherche : la progression et les résultats s'affichent ici.</p>
-            </div>
           )}
 
           <div className="card p-5">
             <h2 className="mb-3 flex items-center gap-2 font-semibold"><History size={16} /> Recherches récentes</h2>
             {searches.length === 0 && <p className="text-sm text-muted">Aucune recherche.</p>}
-            <ul className="divide-y divide-line">
+            <ul className="space-y-1">
               {searches.map((j) => (
-                <li key={j.id} className="flex items-center justify-between gap-2 py-2.5 text-sm">
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{jobLabel(j)}</div>
+                <li key={j.id} className="flex items-center gap-2 rounded-md px-2 py-2 text-sm transition hover:bg-soft">
+                  <div className="min-w-0 grow">
+                    <div className="truncate font-semibold">{jobLabel(j)}</div>
                     <div className="text-xs text-muted">#{j.id} · {fmtDate(j.created_at)}</div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <JobStatus status={j.status} />
-                    <button className="btn btn-ghost btn-sm" onClick={() => reuse(j)}>Réutiliser</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => setJobId(j.id)}>Voir</button>
-                  </div>
+                  <JobStatus status={j.status} />
+                  <button className="btn btn-ghost btn-sm" onClick={() => reuse(j)}>Réutiliser</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setJobId(j.id)}>Voir</button>
                 </li>
               ))}
             </ul>
           </div>
-        </div>
+        </aside>
       </div>
     </>
   );

@@ -1,31 +1,40 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { Ban, Building2, FolderOpen, LayoutDashboard, ListChecks, LogOut, MailCheck, Menu, Moon, Radar, ScrollText, Settings, Sun, Users, X } from "lucide-react";
+import { FolderOpen, LogOut, Menu, Moon, SlidersHorizontal, Sun, Terminal, X } from "lucide-react";
 import { getKey, setKey } from "../lib/api";
 import { useActiveJobs } from "../lib/hooks";
 import { applyTheme } from "../lib/theme";
 import { Spinner } from "./ui";
+import { CoffeeCup, DonateModal, Footer } from "./Footer";
 
 const NAV = [
-  { to: "/", label: "Tableau de bord", icon: LayoutDashboard, end: true },
-  { to: "/search", label: "Prospection", icon: Radar },
-  { to: "/companies", label: "Entreprises", icon: Building2 },
-  { to: "/contacts", label: "Contacts", icon: Users },
-  { to: "/verify", label: "Vérification", icon: MailCheck },
-  { to: "/blacklist", label: "Blacklist", icon: Ban },
-  { to: "/jobs", label: "Tâches", icon: ListChecks },
-  { to: "/files", label: "Fichiers", icon: FolderOpen },
-  { to: "/files", label: "Fichiers", icon: FolderOpen },
-  { to: "/logs", label: "Journal", icon: ScrollText },
-  { to: "/settings", label: "Configuration", icon: Settings },
-
+  { to: "/", label: "Tableau de bord", end: true },
+  { to: "/search", label: "Prospection" },
+  { to: "/companies", label: "Entreprises" },
+  { to: "/contacts", label: "Contacts" },
+  { to: "/verify", label: "Vérification" },
+  { to: "/blacklist", label: "Blacklist" },
+  { to: "/jobs", label: "Tâches" },
 ];
+const TOOLS = [
+  { to: "/files", label: "Fichiers", icon: FolderOpen },
+  { to: "/logs", label: "Journal", icon: Terminal },
+  { to: "/settings", label: "Configuration", icon: SlidersHorizontal },
+];
+
+const linkCls = ({ isActive }) =>
+  `rounded-md px-3 py-1.5 text-sm transition ${isActive ? "bg-white font-semibold text-ink-950" : "text-ink-300 hover:bg-ink-800 hover:text-white"}`;
+const iconCls = ({ isActive }) =>
+  `grid h-8 w-8 place-items-center rounded-md transition ${isActive ? "bg-ink-700 text-white" : "text-ink-300 hover:bg-ink-800 hover:text-white"}`;
 
 export default function Layout() {
   const [open, setOpen] = useState(false);
+  const [donate, setDonate] = useState(false); // <-- ligne manquante
   const [theme, setTheme] = useState(document.documentElement.classList.contains("dark") ? "dark" : "light");
   const loc = useLocation();
-  const { running } = useActiveJobs();
+  const { running, jobs } = useActiveJobs();
+  const job = jobs?.[0];
+  const pct = Math.max(0, Math.min(100, job?.progress?.percent ?? 0));
 
   useEffect(() => setOpen(false), [loc.pathname]);
 
@@ -39,61 +48,81 @@ export default function Layout() {
     window.location.reload();
   };
 
-  const sidebar = (
-    <nav className="flex h-full flex-col gap-1 p-4">
-      <Link to="/" className="mb-5 flex items-center gap-2.5 px-2 text-lg font-semibold tracking-tight">
-        <span className="grid h-9 w-9 place-items-center rounded-xl bg-brand text-brand-fg">🎯</span>
-        Prospect Tool
-      </Link>
-      {NAV.map(({ to, label, icon: Icon, end }) => (
-        <NavLink
-          key={to}
-          to={to}
-          end={end}
-          className={({ isActive }) =>
-            `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${isActive ? "bg-brand/10 text-brand" : "text-muted hover:bg-soft hover:text-fg"}`
-          }
-        >
-          <Icon size={18} /> {label}
-          {to === "/jobs" && running > 0 && (
-            <span className="ml-auto flex items-center gap-1 rounded-full bg-brand px-2 py-0.5 text-xs text-brand-fg"><Spinner size={11} />{running}</span>
-          )}
-        </NavLink>
-      ))}
-      <div className="mt-auto space-y-1 border-t border-line pt-4">
-        <button onClick={toggleTheme} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted hover:bg-soft hover:text-fg">
-          {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />} {theme === "dark" ? "Mode clair" : "Mode sombre"}
-        </button>
-        {getKey() && (
-          <button onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted hover:bg-soft hover:text-fg">
-            <LogOut size={18} /> Déconnexion
-          </button>
+  return (
+    <div className="flex min-h-screen flex-col items-center">
+      <div className="w-full px-6 pt-4 max-sm:px-2 max-sm:pt-2">
+        <nav className="mx-auto flex w-full max-w-[1320px] items-center gap-2 rounded-lg bg-ink-950 py-2 pl-3 pr-2 shadow-pop ring-1 ring-white/5">
+          <Link to="/" className="flex items-center gap-2.5 pr-3">
+            <span className="grid h-8 w-8 place-items-center rounded-md bg-brand-600">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.25">
+                <circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.5" fill="#fff" />
+              </svg>
+            </span>
+            <span className="text-base font-semibold text-white max-sm:hidden">Prospect</span>
+          </Link>
+
+          <div className="hidden grow items-center gap-0.5 lg:flex">
+            {NAV.map((n) => (
+              <NavLink key={n.to} to={n.to} end={n.end} className={linkCls}>{n.label}</NavLink>
+            ))}
+          </div>
+          <div className="grow lg:hidden" />
+
+          <div className="flex items-center gap-1.5">
+            {running > 0 && (
+              <Link to="/jobs" title="Tâches en cours" className="hidden items-center gap-2.5 rounded-md bg-ink-900 px-3 py-1.5 transition hover:bg-ink-800 md:flex">
+                <Spinner size={14} className="text-brand-300" />
+                <span className="text-xs font-semibold text-white">#{job?.id}</span>
+                <span className="h-1 w-16 overflow-hidden rounded-full bg-ink-700">
+                  <span className="block h-full rounded-full bg-brand-400 transition-all duration-500" style={{ width: `${Math.max(4, pct)}%` }} />
+                </span>
+                <span className="text-xs text-ink-400">{pct} %</span>
+                {running > 1 && <span className="rounded bg-ink-700 px-1 text-xs font-semibold text-white">+{running - 1}</span>}
+              </Link>
+            )}
+            <span className="hidden h-6 w-px bg-ink-800 md:block" />
+            <button type="button" className="app-coffee" onClick={() => setDonate(true)}>
+              <CoffeeCup size={16} /><span className="max-sm:hidden">Soutenir</span>
+            </button>
+            <div className="hidden items-center gap-1.5 sm:flex">
+              {TOOLS.map(({ to, label, icon: Icon }) => (
+                <NavLink key={to} to={to} title={label} className={iconCls}><Icon size={16} /></NavLink>
+              ))}
+            </div>
+            <button onClick={toggleTheme} title={theme === "dark" ? "Mode clair" : "Mode sombre"} className="grid h-8 w-8 place-items-center rounded-md text-ink-300 transition hover:bg-ink-800 hover:text-white">
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+            {getKey() && (
+              <button onClick={logout} title="Déconnexion" className="grid h-8 w-8 place-items-center rounded-md text-ink-300 transition hover:bg-ink-800 hover:text-white">
+                <LogOut size={16} />
+              </button>
+            )}
+            <button onClick={() => setOpen(!open)} className="grid h-8 w-8 place-items-center rounded-md text-ink-300 transition hover:bg-ink-800 hover:text-white lg:hidden">
+              {open ? <X size={18} /> : <Menu size={18} />}
+            </button>
+          </div>
+        </nav>
+
+        {open && (
+          <div className="mx-auto mt-2 flex w-full max-w-[1320px] animate-drop flex-col gap-0.5 rounded-lg bg-ink-950 p-2 shadow-pop ring-1 ring-white/5 lg:hidden">
+            {[...NAV, ...TOOLS].map((n) => (
+              <NavLink key={n.to} to={n.to} end={n.end} className={linkCls}>{n.label}</NavLink>
+            ))}
+          </div>
         )}
       </div>
-    </nav>
-  );
 
-  return (
-    <div className="min-h-screen">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-line bg-surface lg:block">{sidebar}</aside>
-
-      {open && (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-64 bg-surface shadow-xl">{sidebar}</aside>
-        </div>
-      )}
-
-      <div className="lg:pl-64">
-        <header className="sticky top-0 z-20 flex items-center justify-between border-b border-line bg-bg/80 px-4 py-3 backdrop-blur lg:hidden">
-          <button onClick={() => setOpen(!open)} className="rounded-lg p-1.5 hover:bg-soft">{open ? <X size={20} /> : <Menu size={20} />}</button>
-          <span className="font-semibold">🎯 Prospect Tool</span>
-          <span className="w-8" />
-        </header>
-        <main className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
+      <main className="w-full max-w-[1368px] grow px-6 pb-10 max-sm:px-2">
+        <div key={loc.pathname} className="animate-fade">
           <Outlet />
-        </main>
+        </div>
+      </main>
+
+      {/* w-full : sans ça, le footer se rétrécit à cause de items-center */}
+      <div className="w-full">
+        <Footer onDonate={() => setDonate(true)} />
       </div>
+      {donate && <DonateModal onClose={() => setDonate(false)} />}
     </div>
   );
 }

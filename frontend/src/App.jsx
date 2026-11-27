@@ -15,7 +15,7 @@ import Jobs from "./pages/Jobs";
 import SettingsPage from "./pages/SettingsPage";
 import Files from "./pages/Files";
 import Logs from "./pages/Logs";
-
+import Portfolio from "./pages/Portfolio";
 export default function App() {
   const [auth, setAuth] = useState("loading"); // loading | ok | needkey | offline
 
@@ -62,6 +62,7 @@ export default function App() {
   return (
     <ToastProvider>
       <Routes>
+        <Route path="/portfolio" element={<Portfolio />} />
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
           <Route path="search" element={<Search />} />
