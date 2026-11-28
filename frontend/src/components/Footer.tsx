@@ -305,6 +305,62 @@ const FX_CSS = `
 }
 `
 
+const DONATE_CSS = `
+.ft-back{position:fixed;inset:0;z-index:100;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 16px;background:rgba(8,10,16,.65);backdrop-filter:blur(4px);animation:ft-fade .2s ease-out}
+.ft-back *{box-sizing:border-box}
+@keyframes ft-fade{from{opacity:0}to{opacity:1}}
+@keyframes ft-pop{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+.ft-modal{position:relative;width:100%;max-width:440px;margin:auto;overflow:hidden;padding:28px 24px 22px;border-radius:20px;background:#13161f;color:#fff;box-shadow:0 24px 70px -12px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.08);animation:ft-pop .28s cubic-bezier(.23,1,.32,1)}
+.ft-x{position:absolute;top:10px;right:12px;z-index:2;width:34px;height:34px;border:0;border-radius:50%;background:rgba(255,255,255,.08);color:#fff;font-size:22px;line-height:1;cursor:pointer;transition:background .15s}
+.ft-x:hover{background:rgba(255,255,255,.18)}
+
+.ft-hearts{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:3}
+.ft-hearts span{position:absolute;bottom:-20px;color:#ff4d6d;animation:ft-heart 1.8s ease-out forwards}
+@keyframes ft-heart{0%{opacity:0;transform:translateY(0) scale(.6)}15%{opacity:1}100%{opacity:0;transform:translateY(-320px) scale(1.2)}}
+
+.ft-hero{text-align:center;margin-bottom:18px}
+.ft-bigcup{display:inline-grid;place-items:center;width:84px;height:84px;margin-bottom:10px;border-radius:50%;background:rgba(255,196,20,.12);color:#ffc414}
+.ft-hero h2{margin:0 0 8px;font-size:1.3rem;font-weight:800;color:#fff}
+.ft-hero p{margin:0;font-size:13.5px;line-height:1.5;color:#9aa0a6}
+
+.ft-amounts{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:16px}
+.ft-amounts button{height:40px;padding:0 4px;border:1px solid rgba(255,255,255,.15);border-radius:10px;background:transparent;color:#fff;font:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s}
+.ft-amounts button small{display:block;font-size:9px;font-weight:600;opacity:.6;line-height:1}
+.ft-amounts button:hover{border-color:rgba(255,196,20,.6)}
+.ft-amounts button.on{border-color:#ffc414;background:rgba(255,196,20,.14);color:#ffc414}
+
+.ft-tabs{display:flex;gap:4px;margin-bottom:12px;padding:4px;border-radius:12px;background:rgba(255,255,255,.06)}
+.ft-tabs button{flex:1;height:36px;border:0;border-radius:9px;background:transparent;color:#9aa0a6;font:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:all .15s}
+.ft-tabs button.wave.on{background:#3cc8ff;color:#04202b}
+.ft-tabs button.om.on{background:#ff8a1f;color:#2b1300}
+
+.ft-number{display:flex;flex-direction:column;align-items:center;gap:6px;margin-bottom:14px;padding:16px;border-radius:14px;border:1px solid}
+.ft-number.wave{border-color:rgba(60,200,255,.4);background:rgba(60,200,255,.07)}
+.ft-number.om{border-color:rgba(255,138,31,.4);background:rgba(255,138,31,.07)}
+.ft-number small{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#9aa0a6}
+.ft-number b{font-size:1.5rem;font-weight:800;letter-spacing:.02em;user-select:all}
+.ft-copy{margin-top:2px;height:34px;padding:0 16px;border:0;border-radius:999px;background:#fff;color:#111;font:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:transform .14s}
+.ft-copy:hover{transform:scale(1.04)}
+.ft-copy:active{transform:scale(.95)}
+
+.ft-steps{margin:0 0 16px;padding-left:1.2em;font-size:13px;line-height:1.55;color:#b4b9c0}
+.ft-steps li{margin-bottom:4px}
+
+.ft-actions{display:flex;gap:8px}
+.ft-go{flex:1;display:inline-flex;align-items:center;justify-content:center;height:42px;border-radius:12px;border:1px solid rgba(255,255,255,.25);color:#fff;font-size:14px;font-weight:700;text-decoration:none;transition:background .15s}
+.ft-go:hover{background:rgba(255,255,255,.1)}
+.ft-go.wave{border-color:#3cc8ff;background:#3cc8ff;color:#04202b}
+.ft-thanks{margin:14px 0 0;text-align:center;font-size:12px;color:#7d848c}
+
+.ft-cup{display:block}
+.ft-steam{opacity:0;animation:ft-steam 2.2s ease-in-out infinite}
+.ft-steam.s2{animation-delay:.4s}.ft-steam.s3{animation-delay:.8s}
+@keyframes ft-steam{0%{opacity:0;transform:translateY(3px)}40%{opacity:.9}100%{opacity:0;transform:translateY(-4px)}}
+
+@media (max-width:420px){.ft-modal{padding:24px 16px 18px}.ft-number b{font-size:1.25rem}}
+@media (prefers-reduced-motion:reduce){.ft-back *,.ft-back{animation:none!important;transition:none!important}}
+`
+
 /* ═════════════════════ Fenêtre de don ═════════════════════ */
 type Method = 'wave' | 'om'
 const AMOUNTS = [500, 1000, 2000, 5000]
@@ -346,6 +402,7 @@ export function DonateModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="ft-back" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <style>{DONATE_CSS}</style>
       <div className="ft-modal" role="dialog" aria-modal="true" aria-label="Offrir un café au développeur">
         <div className="ft-hearts" aria-hidden="true">
           {hearts.map(h => <span key={h.id} style={{ left: `${h.x}%`, animationDelay: `${h.d}s`, fontSize: `${14 * h.s + 8}px` }}>♥</span>)}

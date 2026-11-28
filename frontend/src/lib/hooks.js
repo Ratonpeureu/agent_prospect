@@ -39,18 +39,21 @@ export function usePoll(fn, ms, enabled = true) {
 }
 
 /* ---------- Poller GLOBAL partagé : une seule requête légère pour toute l'application ---------- */
-const active = { data: { running: 0, jobs: [] }, listeners: new Set(), timer: null, fails: 0, inflight: false };
+
+const active = { data: { running: 0, jobs: [] }, listeners: new Set(), timer: null, fails: 0, inflight: false, again: false, boostUntil: 0 };
 
 function schedule() {
   clearTimeout(active.timer);
   if (!active.listeners.size) return;
-  const base = active.data.running > 0 ? 5000 : 20000;           // 5 s si une tâche tourne, sinon 20 s
-  const delay = Math.min(60000, base * 2 ** active.fails);        // backoff si l'API répond mal
+  const boosted = Date.now() < active.boostUntil;                 // juste après un lancement : 1,5 s
+  const base = active.data.running > 0 ? 5000 : boosted ? 1500 : 20000;
+  const delay = Math.min(60000, base * 2 ** active.fails);
   active.timer = setTimeout(pollActive, delay);
 }
 
 async function pollActive() {
-  if (document.hidden || active.inflight) return schedule();      // onglet caché : aucune requête
+  if (document.hidden) return schedule();
+  if (active.inflight) { active.again = true; return; }           // un poll périmé est en cours : on en refait un après
   active.inflight = true;
   try {
     const d = await api.get("/api/jobs/active");
@@ -63,7 +66,8 @@ async function pollActive() {
     active.fails = Math.min(active.fails + 1, 4);
   } finally {
     active.inflight = false;
-    schedule();
+    if (active.again) { active.again = false; clearTimeout(active.timer); pollActive(); }
+    else schedule();
   }
 }
 
@@ -86,8 +90,19 @@ function subscribe(listener) {
 
 /** { running, jobs } : tâches en attente / en cours, partagé par tous les composants. */
 export const useActiveJobs = () => useSyncExternalStore(subscribe, () => active.data);
-/** À appeler juste après avoir lancé une tâche pour afficher son état sans attendre. */
-export const refreshActive = () => { clearTimeout(active.timer); pollActive(); };
+
+/** Rafraîchit tout de suite, puis poll rapidement pendant 30 s le temps que la tâche démarre. */
+export const refreshActive = () => {
+  active.boostUntil = Date.now() + 30000;
+  active.fails = 0;
+  clearTimeout(active.timer);
+  pollActive();
+};
+
+// Déclenché par api.js dès qu'une réponse contient un job_id (recherche, enrichissement, vérification, import, reprise…)
+if (typeof window !== "undefined") window.addEventListener("job-started", refreshActive);
+
+
 
 /** Suivi d'une tâche : 2 s au début, puis de plus en plus espacé (max 10 s), pause si onglet caché. */
 export function useJob(jobId, { onDone } = {}) {

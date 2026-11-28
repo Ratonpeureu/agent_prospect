@@ -19,6 +19,11 @@ const qs = (params) => {
   return s ? `?${s}` : "";
 };
 
+const notifyJob = (j) => {
+  if (j && typeof j === "object" && j.job_id) window.dispatchEvent(new Event("job-started"));
+  return j;
+};
+
 async function call(path, { method = "GET", body, params, form } = {}) {
   const headers = {};
   const key = getKey();
@@ -58,8 +63,11 @@ export const api = {
   },
   post: async (p, body, params) => {
     const r = await call(p, { method: "POST", body, params });
-    return r.status === 204 ? null : r.json();
+    return notifyJob(r.status === 204 ? null : await r.json());
   },
+  upload: async (p, form) => notifyJob(await (await call(p, { method: "POST", form })).json()),
+
+  
   patch: async (p, body) => (await call(p, { method: "PATCH", body })).json(),
   put: async (p, body) => (await call(p, { method: "PUT", body })).json(),
   del: async (p) => {
